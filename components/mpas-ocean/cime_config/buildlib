@@ -43,24 +43,24 @@ def _copy_files_to_blddir(case):
 
     # copy source files into obj dir
     srcroot = case.get_value("SRCROOT")
-    glob_dirs = [os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "framework"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "operators"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "tools", "registry"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "external", "ezxml"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "external", "esmfloc_time_f90"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "shared"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "analysis_members"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "mode_analysis"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "mode_forward"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "BGC"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "cvmix", "src", "shared"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "gotm", "src", "util"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "gotm", "src", "turbulence"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean"),
-                 os.path.join(srcroot, "components", "mpas/mpas-framework", "src", "core_ocean", "driver")]
+    glob_dirs = [os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "framework"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "operators"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "tools", "registry"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "external", "ezxml"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "external", "esmfloc_time_f90"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "shared"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "analysis_members"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "mode_analysis"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "mode_forward"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "BGC"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "cvmix", "src", "shared"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "gotm", "src", "util"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "gotm", "src", "turbulence"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean"),
+                 os.path.join(srcroot, "components", "E3SM/components/mpas-framework", "src", "core_ocean", "driver")]
 
     if driver == 'nuopc':
-        glob_dirs.append(os.path.join(srcroot,"components","mpaso","driver_nuopc"))
+        glob_dirs.append(os.path.join(srcroot,"E3SM/components","mpas-ocean","driver_nuopc"))
 
     dest_dir = os.path.join(objroot, "ocn", "source")
     for glob_dir in glob_dirs:
