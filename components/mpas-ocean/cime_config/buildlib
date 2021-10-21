@@ -32,6 +32,12 @@ def _copy_files_to_blddir(case):
 
     # create bld directories
     dirnames = [os.path.join(objroot, "ocn", "obj"),
+                os.path.join(objroot, "ocn", "obj", "regional_stats_inc"),
+                os.path.join(objroot, "ocn", "obj", "time_series_inc"),
+                os.path.join(objroot, "ocn", "obj", "rpn_calc_inc"),
+                os.path.join(objroot, "ocn", "inc"),
+                os.path.join(objroot, "ocn", "tracer_groups"),
+                os.path.join(objroot, "ocn", "analysis_members"),
                 os.path.join(objroot, "ocn", "source"),
                 os.path.join(objroot, "ocn", "input"),
                 os.path.join(objroot, "ocn", "BGC"),
@@ -80,6 +86,68 @@ def _copy_files_to_blddir(case):
         for filename in filenames:
             shutil.copy2(filename, dest_dir)
 
+    glob_dirs = [os.path.join(srcroot, "E3SM/components/mpas-framework", "src", "external", "esmfloc_time_f90"),
+                 os.path.join(srcroot, "E3SM/components/mpas-framework", "src", "core_ocean", "gotm", "include")]
+    dest_dir = os.path.join(objroot, "ocn", "obj")
+    for glob_dir in glob_dirs:
+        filenames = glob.glob(glob_dir + "/*.inc")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+        filenames = glob.glob(glob_dir + "/*.h")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+
+    glob_dirs = [os.path.join(srcroot, "E3SM/components/mpas-ocean", "src", "analysis_members", "regional_stats_inc")]
+    dest_dir = os.path.join(objroot, "ocn", "obj", "regional_stats_inc")
+    for glob_dir in glob_dirs:
+        filenames = glob.glob(glob_dir + "/*.F")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+        filenames = glob.glob(glob_dir + "/*.inc")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+
+    glob_dirs = [os.path.join(srcroot, "E3SM/components/mpas-ocean", "src", "analysis_members", "time_series_inc")]
+    dest_dir = os.path.join(objroot, "ocn", "obj", "time_series_inc")
+    for glob_dir in glob_dirs:
+        filenames = glob.glob(glob_dir + "/*.F")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+        filenames = glob.glob(glob_dir + "/*.inc")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+
+    glob_dirs = [os.path.join(srcroot, "E3SM/components/mpas-ocean", "src", "analysis_members", "rpn_calc_inc")]
+    dest_dir = os.path.join(objroot, "ocn", "obj", "rpn_calc_inc")
+    for glob_dir in glob_dirs:
+        filenames = glob.glob(glob_dir + "/*.F")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+        filenames = glob.glob(glob_dir + "/*.inc")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+
+    glob_dirs = [os.path.join(srcroot, "E3SM/components/mpas-ocean", "src")]
+    dest_dir = os.path.join(objroot, "ocn")
+    for glob_dir in glob_dirs:
+        filenames = glob.glob(glob_dir + "/Registry.xml")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+
+    glob_dirs = [os.path.join(srcroot, "E3SM/components/mpas-ocean", "src", "tracer_groups")]
+    dest_dir = os.path.join(objroot, "ocn", "tracer_groups")
+    for glob_dir in glob_dirs:
+        filenames = glob.glob(glob_dir + "/Regis*")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+
+    glob_dirs = [os.path.join(srcroot, "E3SM/components/mpas-ocean", "src", "analysis_members")]
+    dest_dir = os.path.join(objroot, "ocn", "analysis_members")
+    for glob_dir in glob_dirs:
+        filenames = glob.glob(glob_dir + "/Regis*")
+        for filename in filenames:
+            shutil.copy2(filename, dest_dir)
+
 ###############################################################################
 def _build_mpaso():
 ###############################################################################
@@ -119,6 +187,35 @@ def _build_mpaso():
         #doesnt buile with this file
         cmd = "rm ode_solvers_template.F90"
         rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "source"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+
+        #build the code that creates the registry *cheyenne, intel specific)
+        cmd = "icc -c ../source/ezxml.c"    
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "obj"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "icc -c ../source/utility.c"    
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "obj"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "icc -c ../source/fortprintf.c"    
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "obj"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "icc -c ../source/gen_inc.c"    
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "obj"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "icc -c ../source/dictionary.c"    
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "obj"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "icc -c ../source/parse.c"    
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "obj"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "icc -o parse parse.o dictionary.o gen_inc.o fortprintf.o utility.o ezxml.o"
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "obj"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "cpp -P -traditional -DFORTRANUNDERSCORE -DNO_SHR_VMATH -DNO_R16 -DCPRPGI -DMPAS_OPENACC -DMPAS_NO_LOG_REDIRECT -DUSE_PIO2 -DMPAS_NO_ESMF_INIT -DMPAS_ESM_SHR_CONST -DMPAS_PERF_MOD_TIMERS -DOFFSET64BIT -D_MPI -DMPAS_NAMELIST_SUFFIX= -DMPAS_EXE_NAME= -DCORE_OCEAN -DEXCLUDE_INIT_MODE -DUSE_LAPACK -Uvector Registry.xml > Registry_processed.xml"
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn"))
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        cmd = "../obj/parse ../Registry_processed.xml"
+        rc, out, err = run_cmd(cmd, from_dir=os.path.join(objroot, "ocn", "inc"))
         expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
 
         # build the library
