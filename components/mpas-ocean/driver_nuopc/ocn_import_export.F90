@@ -201,7 +201,6 @@ contains
     !---------------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
-
     ! Get import and export states
     call NUOPC_ModelGet(gcomp, importState=importState, exportState=exportState, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
@@ -421,7 +420,6 @@ contains
     character(len=*), parameter :: subname='(ocn_import_export:ocn_import)'
     !-----------------------------------------------------------------------
 
-print*,'enter_ocn_import '
     rc = ESMF_SUCCESS
 
     if (dbug > 5) call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
@@ -698,7 +696,6 @@ print*,'enter_ocn_import '
     real (r8), pointer   :: So_omask(:)
     !-----------------------------------------------------------------------
 
-print*,'enter_ocn_export '
     rc = ESMF_SUCCESS
 
     if (dbug > 5) call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
