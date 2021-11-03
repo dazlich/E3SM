@@ -31,7 +31,24 @@ module ocn_comp_nuopc
   use mpas_stream_manager
   use mpas_abort
   use ocn_core_interface
-
+  use shr_pio_mod
+  use pio
+  use perf_mod
+  use ocn_config
+  use ocn_gm
+  use ocn_diagnostics
+  !use mpas_ocn_constants, only : coupleAlarmID
+  use ocn_tracer_ecosys
+  use ocn_tracer_CFC
+  use ocn_tracer_surface_restoring
+  use ocn_tracer_short_wave_absorption_variable
+  use ocn_analysis_driver
+  use ocn_time_integration
+  use ocn_frazil_forcing
+  use ocn_surface_land_ice_fluxes
+  use ocn_forcing
+  use ocn_time_average_coupled
+  
   ! !PUBLIC MEMBER FUNCTIONS:
   implicit none
   private                              ! By default make data private
@@ -60,6 +77,19 @@ module ocn_comp_nuopc
   type (core_type), pointer :: corelist => null()
   type (dm_info), pointer :: dminfo
   type (domain_type), pointer :: domain_ptr
+  type (iosystem_desc_t), pointer :: io_system 
+   integer :: itimestep, &  ! time step number for MPAS
+              ocn_cpl_dt    ! length of coupling interval in seconds - set by coupler/ESMF
+
+  integer :: ocnLogUnit ! unit number for ocn log
+   character (len=*), parameter :: coupleAlarmID = 'coupling'
+   character(len=StrKIND) :: coupleTimeStamp
+
+! !PRIVATE MODULE VARIABLES
+
+  integer, private ::   &
+      my_task
+   character(len=StrKIND) :: runtype
 
 !=======================================================================
 contains
@@ -226,9 +256,10 @@ contains
       use mpas_timekeeping, only : mpas_get_clock_time, mpas_get_time
       use mpas_bootstrapping, only : mpas_bootstrap_framework_phase1, mpas_bootstrap_framework_phase2
       use mpas_log
+      use esmfloc_calendarmod, only: gregorianCal, noleapCal
 
 
-    ! Initialize POP
+    ! Initialize MPASO
 
     ! input/output variables
     type(ESMF_GridComp)  :: gcomp
@@ -259,12 +290,26 @@ contains
     integer                 :: lsize
     integer                 :: shrlogunit      ! old values
     integer                 :: npes
-    integer                 :: iam
+    integer                 :: iam, ierr_local
     logical                 :: mastertask
     character(len=32)       :: starttype
     integer                 :: n,i,j,iblk,jblk,ig,jg,ierr
     integer                 :: lbnum
+    integer                 :: ocnid
     integer                 :: errorCode       ! error code
+    type(ESMF_Time)         :: EcurrTime
+    type(ESMF_Calendar)     :: Ecalendar
+    logical                 :: associated_e
+    integer(I8Kind)         :: s_e, sn_e, sd_e
+    integer                 :: yy_e
+    type(ESMF_CalKind_Flag)   :: type_e
+    type(ESMF_TimeInterval)   :: timeStep        ! Model timestep
+    type (MPAS_TimeInterval_type) :: denInterval, remInterval, zeroInterval
+    type (MPAS_TimeInterval_Type) :: alarmTimeStep
+    type (MPAS_Time_Type) :: alarmStartTime
+    integer (kind=I8KIND) :: numDivs
+    type (MPAS_Time_Type) :: currTime
+
     character(len=*), parameter  :: subname = "ocn_comp_nuopc:(InitializeRealize)"
     integer, dimension(:), pointer :: indexToCellID, indextocellid_0halo
     logical :: readNamelistArg, readStreamsArg
@@ -284,6 +329,7 @@ contains
       character(len=StrKIND) :: mesh_filename_temp
       character(len=StrKIND) :: ref_time_temp
       character(len=StrKIND) :: filename_interval_temp
+      character(len=StrKIND) :: caseid
       character(kind=c_char), dimension(StrKIND+1) :: c_mesh_stream
       character(kind=c_char), dimension(StrKIND+1) :: c_mesh_filename_temp
       character(kind=c_char), dimension(StrKIND+1) :: c_ref_time_temp
@@ -291,6 +337,9 @@ contains
       character(kind=c_char), dimension(StrKIND+1) :: c_iotype
 
       integer :: blockID
+
+      character(len=16) :: inst_suffix
+      integer :: inst_index
 
       character(kind=c_char), dimension(StrKIND+1) :: c_filename       ! StrKIND+1 for C null-termination character
       integer(kind=c_int) :: c_comm
@@ -300,6 +349,12 @@ contains
       type (MPAS_Time_type) :: ref_time
       type (MPAS_TimeInterval_type) :: filename_interval
       character(len=StrKIND) :: timeStamp
+      integer :: ocnPossibleErrUnit !< unit number to reserve for if a err log needs to be opened
+      logical :: exists
+      integer :: pio_iotype
+      integer :: shrloglev !< shr log level and log unit
+      logical, pointer :: tempLogicalConfig
+      character(len=StrKIND), pointer :: tempCharConfig
 
       interface
          subroutine xml_stream_parser(xmlname, mgr_p, comm, ierr) bind(c)
@@ -344,7 +399,7 @@ contains
        read(cvalue,*) nthreads
     endif
 
-!?!$  call omp_set_num_threads(nThreads)
+!$  call omp_set_num_threads(nThreads)
 
 #if (defined _MEMTRACE)
     if (iam == 0) then
@@ -353,34 +408,13 @@ contains
     endif
 #endif
 
-    !-----------------------------------------------------------------------
-    ! initialize the model run
-    !-----------------------------------------------------------------------
+    call NUOPC_CompAttributeGet(gcomp, name='case_name', value=cvalue, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    read(cvalue,*) caseid
 
-    !?call NUOPC_CompAttributeGet(gcomp, name='case_name', value=cvalue, rc=rc)
-    !?if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !?read(cvalue,*) runid
-
-    !?call NUOPC_CompAttributeGet(gcomp, name='start_type', value=cvalue, rc=rc)
-    !?if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !?read(cvalue,*) starttype
-
-    !?if (trim(starttype) == trim('startup')) then
-    !?   runtype = "initial"
-    !?else if (trim(starttype) == trim('continue') ) then
-    !?   runtype = "continue"
-    !?else if (trim(starttype) == trim('branch')) then
-    !?   runtype = "continue"
-    !?else
-    !?   write(stdout,*) 'ocn_comp_nuopc: ERROR: unknown starttype'
-!?  !?     call exit_POP(sigAbort,' ocn_comp_nuopc: ERROR: unknown starttype')
-    !?end if
-
-    ! TODO: Set model_doi_url
-
-    !?call get_component_instance(gcomp, inst_suffix, inst_index, rc)
-    !?if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !?inst_name = "OCN"
+    call NUOPC_CompAttributeGet(gcomp, name='start_type', value=cvalue, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    read(cvalue,*) starttype
 
     !-----------------------------------------------------------------------
     !  first initializaiton phase of mpas-ocean
@@ -388,7 +422,6 @@ contains
     !  domain decomposition, grid, and overflows
     !-----------------------------------------------------------------------
 
-    !?call t_startf ('mpaso_init1')
 
       readNamelistArg = .false.
       readStreamsArg = .false.
@@ -405,170 +438,347 @@ contains
 
     call mpas_allocate_domain(domain_ptr)
 
-    !
-    ! Initialize infrastructure
-    !
+
+!-----------------------------------------------------------------------
+!
+!   first initializaiton phase of mpaso
+!   call mpaso initialization routines
+!
+!-----------------------------------------------------------------------
+
+    call t_startf('mpaso_init1')
+
+    ! ----------------
+    ! Set up log file information
+    ! ----------------
+    !?!?inst_suffix = seq_comm_suffix(ocnID) ! a suffix to append to log file name
+    ocnLogUnit = shr_file_getUnit() ! reserve unit number for log unit
+    ocnPossibleErrUnit = shr_file_getUnit() ! reserve unit number for possible error log file
+
+!    ! Note: In following code, a file ocn_modelio.nml is queried to determine the log file name to use.
+!    ! This file is generated when a case is created.  The default file name in there is currently ocn.log.DATE-TIME.
+!    if (iam==0) then
+!       inquire(file='ocn_modelio.nml'//trim(inst_suffix),exist=exists)
+!       call shr_file_setio('ocn_modelio.nml'//trim(inst_suffix), ocnLogUnit)
+!    endif
+
+    ! Store shr log unit and level so we can reassign them later when OCN control is complete
+    call shr_file_getLogUnit(shrlogunit)
+    call shr_file_getLogLevel(shrloglev)
+    ! Set the shr log unit to be the ocnLogUnit
+    call shr_file_setLogUnit(ocnLogUnit)
+
+    ! Write to ocnLogUnit here, because the log module is not open yet.
+    if (iam==0) write(ocnLogUnit,'(a,i6)') '=== Beginning InitializeRealize for ocn: rank=',iam
+
     call mpas_framework_init_phase1(domain_ptr % dminfo, lmpicom)
     
       call ocn_setup_core(corelist)
       call ocn_setup_domain(domain_ptr)
 
-      ! Set up the log manager as early as possible so we can use it for any errors/messages during subsequent init steps
-      ! We need:
-      ! 1) domain_ptr to be allocated,
-      ! 2) dmpar_init complete to access dminfo,
-      ! 3) *_setup_core to assign the setup_log function pointer
-      ierr = domain_ptr % core % setup_log(domain_ptr % logInfo, domain_ptr)
-      if ( ierr /= 0 ) then
-         call mpas_dmpar_global_abort('ERROR: Log setup failed for core ' // trim(domain_ptr % core % coreName))
-      end if
+    ! ===========
+    ! Initialize log manager
+    call mpas_log_init(domain_ptr % logInfo, domain_ptr, unitNumbers=(/ocnLogUnit, ocnPossibleErrUnit/), err=ierr)
+    if ( ierr /= 0 ) then
+       write(ocnLogUnit,*) 'ERROR: log init failed for core ' // trim(domain_ptr % core % coreName)
+       call mpas_dmpar_abort(domain_ptr % dminfo)
+    end if
 
-      if ( readNamelistArg ) then
-         domain_ptr % namelist_filename = namelistFile
-      end if
-
-      if ( readStreamsArg ) then
-         domain_ptr % streams_filename = streamsFile
-      end if
-
-      !DD hardwire for now
-      domain_ptr % namelist_filename = 'mpaso_in'
-      domain_ptr % streams_filename = 'streams.ocean'
-      ierr = domain_ptr % core % setup_namelist(domain_ptr % configs, domain_ptr % namelist_filename, domain_ptr % dminfo)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Namelist setup failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
-    if (errorCode /= ESMF_Success) then
-       call ESMF_LogWrite(trim(subname)//'MPASO_initialize1: error in mpaso_init_phase1',ESMF_LOGMSG_INFO, rc=rc)
-       rc = ESMF_FAILURE
-       return
+    ! Set core specific options here
+    ! Disable output from all but the master task for E3SM!
+    ! (This overrides the default set by mpas_log_init based on MPAS_DEBUG setting.)
+    if (iam /= 0) then
+       domain_ptr % logInfo % outputLog % isActive = .false.
     endif
 
-    !?call t_stopf ('mpaso_init1')
+    ! After core has had a chance to modify log defaults, open the output log
+    call mpas_log_open(err=ierr)
+    if ( ierr /= 0 ) then
+       write(ocnLogUnit,*) 'ERROR: log open failed for core ' // trim(domain_ptr % core % coreName)
+       call mpas_dmpar_abort(domain_ptr % dminfo)
+    end if
+    ! ===========
 
-      call mpas_framework_init_phase2(domain_ptr)
 
-      ierr = domain_ptr % core % define_packages(domain_ptr % packages)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Package definition failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
+    ! ----------
+    ! Process namelist and streams files
+    ! ----------
+    ! Override the names of the stream and namelist files
+    domain_ptr % namelist_filename = 'mpaso_in'
+    domain_ptr % streams_filename = 'streams.ocean'
 
-      ierr = domain_ptr % core % setup_packages(domain_ptr % configs, domain_ptr % packages, domain_ptr % iocontext)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Package setup failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
+    ! Setup namelist variables, and read the namelist
+    ierr = domain_ptr % core % setup_namelist(domain_ptr % configs, domain_ptr % namelist_filename, domain_ptr % dminfo)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Namelist setup failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
 
-      ierr = domain_ptr % core % setup_decompositions(domain_ptr % decompositions)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Decomposition setup failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
+    call mpas_framework_init_phase2(domain_ptr) !, io_system)
 
-      ierr = domain_ptr % core % setup_clock(domain_ptr % clock, domain_ptr % configs)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Clock setup failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
 
-      call mpas_log_write('Reading streams configuration from file '//trim(domain_ptr % streams_filename))
-      inquire(file=trim(domain_ptr % streams_filename), exist=streamsExists)
+    ! Define package variables
+    ierr = domain_ptr % core % define_packages(domain_ptr % packages)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Package definition failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
 
-      if ( .not. streamsExists ) then
-         call mpas_log_write('Streams file '//trim(domain_ptr % streams_filename)//' does not exist.', messageType=MPAS_LOG_CRIT)
-      end if
+    ! Setup packages (i.e. determine if they should be on or off)
+    ierr = domain_ptr % core % setup_packages(domain_ptr % configs, domain_ptr % packages, domain_ptr % ioContext)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Package setup failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
 
-      call mpas_timer_start('total time')
-      call mpas_timer_start('initialize')
+    ! Setup decompositions available for dimensions
+    ierr = domain_ptr % core % setup_decompositions(domain_ptr % decompositions)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Decomposition setup failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
 
-      !
-      ! Using information from the namelist, a graph.info file, and a file containing
-      !    mesh fields, build halos and allocate blocks in the domain
-      !
-      ierr = domain_ptr % core % get_mesh_stream(domain_ptr % configs, mesh_stream)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Failed to find mesh stream for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
+    ! ----------
+    ! Override namelist options based on start type
+    ! ----------
+    if (trim(starttype) == trim('startup')) then
+       runtype = "initial"
+    else if (trim(starttype) == trim('continue') ) then
+       runtype = "continue"
+    else if (trim(starttype) == trim('branch')) then
+       runtype = "continue"
+    else
+       !write(stdout,*) 'ocn_comp_nuopc: ERROR: unknown starttype'
+       call ESMF_LogWrite(trim(subname)//'ERROR: unknown starttype',ESMF_LOGMSG_INFO, rc=rc)
+       rc = ESMF_FAILURE
+       return
+    end if
 
-      call mpas_f_to_c_string(domain_ptr % streams_filename, c_filename)
-      call mpas_f_to_c_string(mesh_stream, c_mesh_stream)
-      c_comm = domain_ptr % dminfo % comm
-      call xml_stream_get_attributes(c_filename, c_mesh_stream, c_comm, &
-                                     c_mesh_filename_temp, c_ref_time_temp, &
-                                     c_filename_interval_temp, c_iotype, c_ierr)
-      if (c_ierr /= 0) then
-         call mpas_log_write('stream xml get attribute failed: '//trim(domain_ptr % streams_filename), messageType=MPAS_LOG_CRIT)
-      end if
-      call mpas_c_to_f_string(c_mesh_filename_temp, mesh_filename_temp)
-      call mpas_c_to_f_string(c_ref_time_temp, ref_time_temp)
-      call mpas_c_to_f_string(c_filename_interval_temp, filename_interval_temp)
-      call mpas_c_to_f_string(c_iotype, iotype)
+    if (runtype == "initial") then ! Start up run
+        ! Turn off restart
+        call mpas_pool_get_config(domain_ptr % configs, "config_do_restart", tempLogicalConfig)
+        tempLogicalConfig = .false.
 
-      if (trim(iotype) == 'pnetcdf') then
-         mesh_iotype = MPAS_IO_PNETCDF
-      else if (trim(iotype) == 'pnetcdf,cdf5') then
-         mesh_iotype = MPAS_IO_PNETCDF5
-      else if (trim(iotype) == 'netcdf') then
-         mesh_iotype = MPAS_IO_NETCDF
-      else if (trim(iotype) == 'netcdf4') then
-         mesh_iotype = MPAS_IO_NETCDF4
-      else
-         mesh_iotype = MPAS_IO_PNETCDF
-      end if
+        ! Setup start time. Will be over written later when clocks are synchronized
+        call mpas_pool_get_config(domain_ptr % configs, "config_start_time", tempCharConfig)
+        tempCharConfig = trim(tempCharConfig) // "0:00:00"
 
-      start_time = mpas_get_clock_time(domain_ptr % clock, MPAS_START_TIME, ierr)
-      if ( trim(ref_time_temp) == 'initial_time' ) then
-          call mpas_get_time(start_time, dateTimeString=ref_time_temp, ierr=ierr)
-      end if
+        ! Setup run duration. Will be ignored in coupled run, since coupler defines how long the run is.
+        call mpas_pool_get_config(domain_ptr % configs, "config_run_duration", tempCharConfig)
+        tempCharConfig = "0001-00-00_00:00:00"
+    else if (runtype == "continue" .or. runtype == "branch") then ! Restart run or branch run
+        ! Turn on restart
+        call mpas_pool_get_config(domain_ptr % configs, "config_do_restart", tempLogicalConfig)
+        tempLogicalConfig = .true.
 
-      blockID = -1
-      if ( trim(filename_interval_temp) == 'none' ) then
-          call mpas_expand_string(ref_time_temp, blockID, mesh_filename_temp, mesh_filename)
-      else
-          call mpas_set_time(ref_time, dateTimeString=ref_time_temp, ierr=ierr)
-          call mpas_set_timeInterval(filename_interval, timeString=filename_interval_temp, ierr=ierr)
-          call mpas_build_stream_filename(ref_time, start_time, filename_interval, mesh_filename_temp, blockID, mesh_filename, ierr)
-      end if
-      call mpas_log_write(' ** Attempting to bootstrap MPAS framework using stream: ' // trim(mesh_stream))
-      call mpas_bootstrap_framework_phase1(domain_ptr, mesh_filename, mesh_iotype)
+        ! Set start time to be read from file
+        call mpas_pool_get_config(domain_ptr % configs, "config_start_time", tempCharConfig)
+        tempCharConfig = "file"
 
-      !
-      ! Set up run-time streams
-      !
-      call MPAS_stream_mgr_init(domain_ptr % streamManager, domain_ptr % ioContext, domain_ptr % clock, &
-                                domain_ptr % blocklist % allFields, domain_ptr % packages, domain_ptr % blocklist % allStructs)
+        ! Setup run duration. Will be ignored in coupled run, since coupler defines how long the run is.
+        call mpas_pool_get_config(domain_ptr % configs, "config_run_duration", tempCharConfig)
+        tempCharConfig = "0001-00-00_00:00:00"
+    end if
 
-      call add_stream_attributes(domain_ptr)
+    ! Setup MPASO simulation clock
+    ierr = domain_ptr % core % setup_clock(domain_ptr % clock, domain_ptr % configs)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Clock setup failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
 
-      ierr = domain_ptr % core % setup_immutable_streams(domain_ptr % streamManager)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Immutable streams setup failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
+    call mpas_log_write('Reading streams configuration from file '//trim(domain_ptr % streams_filename))
+    inquire(file=trim(domain_ptr % streams_filename), exist=streamsExists)
 
-      mgr_p = c_loc(domain_ptr % streamManager)
-      call xml_stream_parser(c_filename, mgr_p, c_comm, c_ierr)
-      if (c_ierr /= 0) then
-         call mpas_log_write('xml stream parser failed: '//trim(domain_ptr % streams_filename), messageType=MPAS_LOG_CRIT)
-      end if
+    if ( .not. streamsExists ) then
+       call mpas_log_write('Streams file '//trim(domain_ptr % streams_filename)//' does not exist.', MPAS_LOG_CRIT)
+    end if
 
-      !
-      ! Validate streams after set-up
-      !
-      call mpas_log_write(' ** Validating streams')
-      call MPAS_stream_mgr_validate_streams(domain_ptr % streamManager, ierr = ierr)
-      if ( ierr /= MPAS_STREAM_MGR_NOERR ) then
-         call mpas_dmpar_global_abort('ERROR: Validation of streams failed for core ' // trim(domain_ptr % core % coreName))
-      end if
+    !
+    ! Using information from the namelist, a graph.info file, and a file containing
+    !    mesh fields, build halos and allocate blocks in the domain
+    !
+    ierr = domain_ptr % core % get_mesh_stream(domain_ptr % configs, mesh_stream)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Failed to find mesh stream for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
 
-      !
-      ! Finalize the setup of blocks and fields
-      !
-      call mpas_bootstrap_framework_phase2(domain_ptr)
 
-      !
-      ! Initialize core
-      !
-      iErr = domain_ptr % core % core_init(domain_ptr, timeStamp)
-      if ( ierr /= 0 ) then
-         call mpas_log_write('Core init failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
+    call mpas_f_to_c_string(domain_ptr % streams_filename, c_filename)
+    call mpas_f_to_c_string(mesh_stream, c_mesh_stream)
+    c_comm = domain_ptr % dminfo % comm
+    call xml_stream_get_attributes(c_filename, c_mesh_stream, c_comm, &
+                                   c_mesh_filename_temp, c_ref_time_temp, &
+                                   c_filename_interval_temp, c_iotype, c_ierr)
+    if (c_ierr /= 0) then
+       call mpas_log_write('xml_stream_get_attributes failed.', MPAS_LOG_CRIT)
+    end if
+    call mpas_c_to_f_string(c_mesh_filename_temp, mesh_filename_temp)
+    call mpas_c_to_f_string(c_ref_time_temp, ref_time_temp)
+    call mpas_c_to_f_string(c_filename_interval_temp, filename_interval_temp)
+    call mpas_c_to_f_string(c_iotype, iotype)
+
+    if (trim(iotype) == 'pnetcdf') then
+       mesh_iotype = MPAS_IO_PNETCDF
+    else if (trim(iotype) == 'pnetcdf,cdf5') then
+       mesh_iotype = MPAS_IO_PNETCDF5
+    else if (trim(iotype) == 'netcdf') then
+       mesh_iotype = MPAS_IO_NETCDF
+    else if (trim(iotype) == 'netcdf4') then
+       mesh_iotype = MPAS_IO_NETCDF4
+    else
+       mesh_iotype = MPAS_IO_PNETCDF
+    end if
+
+    start_time = mpas_get_clock_time(domain_ptr % clock, MPAS_START_TIME, ierr)
+    if ( trim(ref_time_temp) == 'initial_time' ) then
+        call mpas_get_time(start_time, dateTimeString=ref_time_temp, ierr=ierr)
+    end if
+
+    if ( trim(filename_interval_temp) == 'none' ) then
+        call mpas_expand_string(ref_time_temp, -1, mesh_filename_temp, mesh_filename)
+    else
+        call mpas_set_time(ref_time, dateTimeString=ref_time_temp, ierr=ierr)
+        call mpas_set_timeInterval(filename_interval, timeString=filename_interval_temp, ierr=ierr)
+        call mpas_build_stream_filename(ref_time, start_time, filename_interval, mesh_filename_temp, -1, mesh_filename, ierr)
+    end if
+
+    ! Bootstrap framework (1). Here data structures are setup, but dimensions and arrays are not finalized.
+    call mpas_log_write(' ** Attempting to bootstrap MPAS framework using stream: ' // trim(mesh_stream))
+    call mpas_bootstrap_framework_phase1(domain_ptr, mesh_filename, mesh_iotype)
+
+    !
+    ! Set up run-time streams
+    !
+    call MPAS_stream_mgr_init(domain_ptr % streamManager, domain_ptr % ioContext, domain_ptr % clock, &
+                              domain_ptr % blocklist % allFields, domain_ptr % packages, domain_ptr % blocklist % allStructs)
+
+    call add_stream_attributes(domain_ptr)
+
+    ! Setup all immutable streams for the core
+    ierr = domain_ptr % core % setup_immutable_streams(domain_ptr % streamManager)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Immutable streams setup failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
+
+    ! Parse / read all streams configuration
+    mgr_p = c_loc(domain_ptr % streamManager)
+    call xml_stream_parser(c_filename, mgr_p, c_comm, c_ierr)
+    if (c_ierr /= 0) then
+       call mpas_log_write('xml_stream_parser failed.', MPAS_LOG_CRIT)
+    end if
+
+    my_task = domain_ptr % dminfo % my_proc_id
+
+    !
+    ! Finalize the setup of blocks and fields
+    !
+    call mpas_bootstrap_framework_phase2(domain_ptr)
+    call t_stopf('mpaso_init1')
+
+    call t_startf('mpaso_init2')
+    ! Initialize the MPASO core
+    ierr = domain_ptr % core % core_init(domain_ptr, timeStamp)
+    if ( ierr /= 0 ) then
+       call mpas_log_write('Core init failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
+    call t_stopf('mpaso_init2')
+
+!-----------------------------------------------------------------------
+!
+!   initialize time-stamp information
+!
+!-----------------------------------------------------------------------
+
+!-----------------------------------------------------------------------
+!
+!   check for consistency of mpaso and sync clock initial time
+!
+!-----------------------------------------------------------------------
+
+    call ESMF_ClockGet( clock, currTime=EcurrTime, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !DD there hase to be a better way to go from esmf type to MPAS_Time_Type
+    call ESMF_TimeGet(Ecurrtime, s_i8=s_e, sn_i8=sn_e, sd_i8=sd_e, yy=yy_e, calendar = ecalendar, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    currtime%t%basetime%Sn = sn_e
+    currtime%t%basetime%Sd = sd_e
+    currtime%t%yr = yy_e
+
+    call ESMF_CalendarGet(Ecalendar, calkindflag=type_e, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    if(type_e == ESMF_CALKIND_NOLEAP) then
+       currTime%t%calendar => noleapCal
+    elseif(type_e == ESMF_CALKIND_GREGORIAN) then
+       currTime%t%calendar => gregorianCal
+    else
+       rc = 1
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    endif
+
+    if (runtype == 'initial') then
+       call mpas_set_clock_time(domain_ptr % clock, currTime, MPAS_START_TIME, ierr)
+       call mpas_set_clock_time(domain_ptr % clock, currTime, MPAS_NOW, ierr)
+    else if (runtype == 'continue' .or. runtype == 'branch') then
+       call mpas_set_clock_time(domain_ptr % clock, currTime, MPAS_START_TIME, ierr)
+       call mpas_set_clock_time(domain_ptr % clock, currTime, MPAS_NOW, ierr)
+    end if
+    ! Doublecheck that clocks are synced here.  
+    ! (Note that if this is an initial run, a section below will advance the ocean clock
+    ! by one coupling interval, at which point we expect the clocks to be OUT of sync.)
+    !DD add the check later
+    !?!?call check_clocks_sync(domain % clock, Eclock, ierr)
+
+    !-----------------------------------------------------------------------
+    ! initialize necessary coupling info
+    !-----------------------------------------------------------------------
+
+    call ESMF_ClockGet(clock, timeStep=timeStep, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_TimeIntervalGet( timeStep, s=ocn_cpl_dt, rc=rc )
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    
+    call mpas_set_timeInterval(alarmTimeStep, S=ocn_cpl_dt, ierr=ierr)
+    call mpas_get_timeInterval(alarmTimeStep, timeString=coupleTimeStamp, ierr=ierr)
+
+    ! Verify the mpas time step fits into a coupling interval
+    call mpas_pool_get_config(domain_ptr % configs, 'config_dt', tempCharConfig)
+    call mpas_set_timeInterval(denInterval, timeString=tempCharConfig, ierr=ierr)
+    call mpas_set_timeInterval(zeroInterval, S=0, ierr=ierr)
+    call mpas_interval_division(start_time, alarmTimeStep, denInterval, numDivs, remInterval)
+
+    ierr = 0
+
+    if ( alarmTimeStep < denInterval ) then
+       ierr = 1
+    end if
+    ierr_local = ierr
+    call mpas_dmpar_max_int(domain_ptr % dminfo, ierr_local, ierr)
+
+    if ( ierr == 1 ) then
+       call mpas_log_write('Coupling interval is: ' // trim(coupleTimeStamp), MPAS_LOG_ERR)
+       call mpas_log_write('        OCN Model time step is: ' // trim(tempCharConfig), MPAS_LOG_ERR)
+       call mpas_log_write('        The model time step cannot be longer then the coupling interval', MPAS_LOG_ERR)
+       call mpas_log_write('Model is not properly configured for coupling interval.', MPAS_LOG_CRIT)
+    end if
+
+    if ( remInterval > zeroInterval ) then
+       ierr = 1
+    end if
+
+    ierr_local = ierr
+    call mpas_dmpar_max_int(domain_ptr % dminfo, ierr_local, ierr)
+
+    if ( ierr == 1 ) then
+       call mpas_log_write('Coupling interval is: ' // trim(coupleTimeStamp), MPAS_LOG_ERR)
+       call mpas_log_write('        OCN Model time step is: ' // trim(tempCharConfig), MPAS_LOG_ERR)
+       call mpas_log_write('        These are not synchronized, so time steps will not match to coupling interval boundaries.', MPAS_LOG_ERR)
+       call mpas_log_write('        Please reconfigure either the coupling interval or the time step.', MPAS_LOG_ERR)
+       call mpas_log_write('Model is not properly configured for coupling interval.', MPAS_LOG_CRIT)
+    end if
+
+    ! set coupling alarm
+    alarmStartTime = currTime
+    call mpas_add_clock_alarm(domain_ptr % clock, coupleAlarmID, alarmStartTime, alarmTimeStep, ierr=ierr)
+    call mpas_print_alarm(domain_ptr % clock, coupleAlarmID, ierr)
+    call mpas_reset_clock_alarm(domain_ptr % clock, coupleAlarmID, ierr=ierr)
 
     !---------------------------------------------------------------------------
     ! Determine the global index space needed for the distgrid
@@ -621,7 +831,6 @@ contains
     call NUOPC_CompAttributeGet(gcomp, name='mesh_ocn', value=cvalue, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    !EMesh = ESMF_MeshCreate(filename=trim(cvalue), fileformat=ESMF_FILEFORMAT_ESMFMESH, &
     EMesh = ESMF_MeshCreate(filename=trim(cvalue), fileformat=ESMF_FILEFORMAT_ESMFMESH, &
          elementDistgrid=Distgrid, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
@@ -962,7 +1171,6 @@ contains
     type(ESMF_State)             :: exportState
     type(ESMF_Clock)             :: clock
     type(ESMF_Alarm)             :: alarm
-    type(ESMF_Time)              :: currTime
     type(ESMF_Time)              :: nextTime
     character(ESMF_MAXSTR)       :: cvalue
     integer                      :: errorCode  ! error flag
@@ -978,81 +1186,39 @@ contains
     integer                      :: shrlogunit ! old values
     character(CL)          :: message
     logical                      :: first_time = .true.
+    logical                      :: debugon
     character(len=*), parameter  :: subname = "ocn_comp_nuopc: (ModelAdvance)"
+
+    type (mpas_pool_type), pointer :: meshPool, statePool, &
+                                      forcingPool, &
+                                      averagePool, scratchPool
+    type (block_type), pointer :: block_ptr
+      logical, pointer :: config_write_output_on_startup
+      logical, pointer :: config_use_ecosysTracers
+      logical, pointer :: config_use_CFCTracers
+      logical, pointer :: config_use_activeTracers_surface_restoring
+      logical, pointer :: config_use_surface_salinity_monthly_restoring
+      character (len=StrKIND), pointer :: config_restart_timestamp_name
+      character (len=StrKIND), pointer :: config_sw_absorption_type
+      integer iam, SHRLOGLEV
+      ! Added for coupling interval initialization
+      integer, pointer :: index_avgZonalSSHGradient, index_avgMeridionalSSHGradient
+      real (kind=RKIND), dimension(:),   pointer :: filteredSSHGradientZonal, filteredSSHGradientMeridional
+      real (kind=RKIND), dimension(:,:), pointer :: avgSSHGradient
+      real (kind=RKIND), pointer :: config_ssh_grad_relax_timescale
+      real (kind=RKIND) :: timeFilterFactor
+      type (MPAS_timeInterval_type) :: timeStep
+      character(len=StrKIND) :: timeStamp, streamName, WCstring
+      integer  :: streamDirection
+      logical :: streamActive, rstwr
+      type (MPAS_Time_Type) :: currTime
+      real (kind=RKIND) :: dt, current_wallclock_time
+
     !-----------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
     errorCode = ESMF_Success
 
-    !?!-----------------------------------------------------------------------
-    !?! skip first coupling interval for an initial run
-    !?!-----------------------------------------------------------------------
-
-    !?! NOTE: pop starts one coupling interval ahead of the rest of the system
-    !?! so to have it be in sync with the rest of the system, simply skip the first
-    !?! coupling interval for a initial run only
-    !?if (first_time) then
-    !?   first_time = .false.
-    !?   if (runtype == 'initial') then
-    !?      if (mastertask) then
-    !?         write(stdout,*)'Returning at first coupling interval'
-    !?      end if
-    !?      RETURN
-    !?   end if
-    !?end if
-
-#if (defined _MEMTRACE)
-    if(iam == 0 ) then
-       lbnum=1
-       call memmon_dump_fort('memmon.out',subname//':start::',lbnum)
-    endif
-#endif
-
-    !?!--------------------------------------------------------------------
-    !?! check that pop internal clock is in sync with ESMF clock
-    !?!--------------------------------------------------------------------
-
-    !?! NOTE: that in nuopc - the ESMF clock is updated at the end of the timestep
-    !?! whereas in cpl7 it was updated at the beginning - so need to have the check
-    !?! at the beginning of the time loop BEFORE pop updates its time step
-
-    !?! pop clock
-    !?ymd = iyear*10000 + imonth*100 + iday
-    !?tod = ihour*seconds_in_hour + iminute*seconds_in_minute + isecond
-
-    !?! model clock
-    !?call NUOPC_ModelGet(gcomp, modelClock=clock, rc=rc)
-    !?if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !?call ESMF_ClockGet( clock, currTime=currTime, rc=rc)
-    !?if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !?call ESMF_TimeGet( currTime, yy=yr_sync, mm=mon_sync, dd=day_sync, s=tod_sync, rc=rc )
-    !?if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !?call shr_cal_ymd2date(yr_sync, mon_sync, day_sync, ymd_sync)
-
-    !?! check
-    !?if ( (ymd /= ymd_sync) .or. (tod /= tod_sync) ) then
-    !?   write(stdout,*)' pop2 ymd=',ymd     ,'  pop2 tod= ',tod
-    !?   write(stdout,*)' sync ymd=',ymd_sync,'  sync tod= ',tod_sync
-    !?   write(stdout,*)' Internal pop2 clock not in sync with Sync Clock'
-    !?   call ESMF_LogWrite(subname//" Internal POP clock not in sync with ESMF model clock", ESMF_LOGMSG_INFO)
-    !?   !call shr_sys_abort(subName// ":: Internal POP clock not in sync with ESMF model Clock")
-    !?end if
-    !?!-----------------------------------------------------------------------
-    !?!  start up the main timer
-    !?!-----------------------------------------------------------------------
-
-    !?call timer_start(timer_total)
-
-    !?!-----------------------------------------------------------------------
-    !?! reset shr logging to my log file
-    !?!----------------------------------------------------------------------------
-
-    !?call shr_file_getLogUnit (shrlogunit)
-    !?call shr_file_setLogUnit (stdout)
-
-    !?if (ldiag_cpl) then
-    !?   call register_string ('info_debug_ge2')
-    !?endif
 
     !--------------------------------
     ! Query the Component for its clock, importState and exportState
@@ -1061,128 +1227,288 @@ contains
     call NUOPC_ModelGet(gcomp, modelClock=clock, importState=importState, exportState=exportState, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    !?!----------------------------------------------------------------------------
-    !?! restart flag (rstwr) will assume only an eod restart for now
-    !?!----------------------------------------------------------------------------
-
     ! Note this logic triggers off of the component clock rather than the internal pop time
     ! The component clock does not get advanced until the end of the loop - not at the beginning
 
     call ESMF_ClockGetAlarm(clock, alarmname='alarm_restart', alarm=alarm, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    if (ESMF_AlarmIsRinging(alarm, rc=rc)) then
-       if (ChkErr(rc,__LINE__,u_FILE_u)) return
-       call ESMF_AlarmRingerOff( alarm, rc=rc )
-       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      iam = domain_ptr % dminfo % my_proc_id
 
-       !?call override_time_flag(cpl_write_restart, value=.true.)
-       !?call ccsm_char_date_and_time ! set time_management module vars cyear, cmonth, ..
-       !?write(message,'(6a)') 'driver requests restart file at eod  ', cyear,'/',cmonth,'/',cday
-       !?call document ('ModelAdvance:', message)
-    endif
-
-    !-----------------------------------------------------------------------
-    ! advance the model in time over coupling interval
-    ! write restart dumps and archiving
-    !-----------------------------------------------------------------------
-
-    ! Note that all ocean time flags are evaluated each timestep in time_manager
-    !?! tlast_coupled is set to zero at the end of ocn_export
-
-print*,'model_advance'
-    advance: do
-
-print*,'model_advance_loop'
-       ! -----
-       ! obtain import state data
-       ! -----
-      !? if (check_time_flag(cpl_ts) .or. nsteps_run == 0) then
-
-          call ocn_import(importState, flds_scalar_name, domain_ptr,  &
-                          errorCode, rc)
-      !?    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-
-      !?    if (errorCode /= POP_Success) then
-      !?       call POP_ErrorPrint(errorCode)
-      !?       call exit_POP(sigAbort, 'ERROR in step')
-      !?    endif
-
-      !?    ! update orbital parameters
-
-      !?    call pop_orbital_update(clock, stdout, mastertask, orb_eccen, orb_obliqr, orb_lambm0, orb_mvelpp, rc)
-      !?    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-
-      !?    call pop_set_coupled_forcing
-      !? end if
-
-       ! -----
-       ! advance mpaso
-       ! -----
-
-       iErr = domain_ptr % core % core_run(domain_ptr)
-       if ( iErr /= 0 ) then
-         call mpas_log_write('Core run failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-       end if
-
-       !?if (errorCode /= POP_Success) then
-       !?   call POP_ErrorPrint(errorCode)
-       !?   call exit_POP(sigAbort, 'ERROR in step')
-       !?endif
-
-       !?if (check_KE(100.0_r8)) then
-       !?   !*** exit if energy is blowing
-       !?   call output_driver
-       !?   call exit_POP(sigAbort,'ERROR: k.e. > 100 ')
-       !?endif
-       !?call output_driver()
-
-       ! -----
-       ! create export state
-       ! -----
-
-       !?if (check_time_flag(cpl_ts)) then
-
-          call ocn_export(exportState, flds_scalar_name, domain_ptr,    &
-                          errorCode, rc)
-          if (ChkErr(rc,__LINE__,u_FILE_u)) return
-
-       !?   if (errorCode /= POP_Success) then
-       !?      call POP_ErrorPrint(errorCode)
-       !?      call exit_POP(sigAbort, 'ERROR in ocn_export')
-       !?   endif
-
-       !?   if ( lsend_precip_fact ) then
-       !?      call State_SetScalar(precip_fact, flds_scalar_index_precip_factor, exportState, &
-       !?           flds_scalar_name, flds_scalar_num, rc)
-       !?      if (ChkErr(rc,__LINE__,u_FILE_u)) return
-       !?   else
-       !?      ! Just send back 1.
-       !?      call State_SetScalar(1._r8, flds_scalar_index_precip_factor, exportState, &
-       !?           flds_scalar_name, flds_scalar_num, rc)
-       !?      if (ChkErr(rc,__LINE__,u_FILE_u)) return
-       !?   end if
-
-          exit advance
-       !?end if
-
-    enddo advance
-
-    !?!----------------------------------------------------------------------------
-    !?! Reset shr logging to original values
-    !?!----------------------------------------------------------------------------
-
-    !?call shr_file_setLogUnit (shrlogunit)
-
-    !?call timer_stop(timer_total)
-
-#if (defined _MEMTRACE)
-    if(iam == 0) then
-       lbnum=1
-       call memmon_dump_fort('memmon.out',subname//':end::',lbnum)
-       call memmon_reset_addr()
-    endif
+      debugOn = .false.
+#ifdef MPAS_DEBUG
+      debugOn = .true.
 #endif
+ 
+      ! Set MPAS Log module instance
+      mpas_log_info => domain_ptr % logInfo
+      if (debugOn) call mpas_log_write("=== Beginning ocn_run_nuopc ===")
+
+      call mpas_pool_get_config(domain_ptr % configs, 'config_restart_timestamp_name', config_restart_timestamp_name)
+      call mpas_pool_get_config(domain_ptr % configs, 'config_sw_absorption_type', config_sw_absorption_type)
+
+      ! Setup log information.
+      call shr_file_getLogUnit (shrlogunit)
+      call shr_file_getLogLevel(shrloglev)
+      call shr_file_setLogUnit (ocnLogUnit)
+
+      timeStep = mpas_get_clock_timestep(domain_ptr % clock, ierr=ierr)
+      call mpas_get_timeInterval(timeStep, dt=dt)
+      call mpas_reset_clock_alarm(domain_ptr % clock, coupleAlarmID, ierr=ierr)
+
+      ! Import state from coupler
+       call ocn_import(importState, flds_scalar_name, domain_ptr,  &
+                       errorCode, rc)
+      ! Ensures MPAS AM write/compute startup steps are performed
+      call ocn_analysis_compute_startup(domain_ptr, ierr)
+
+      ! Handle writing initial state
+      call mpas_pool_get_config(domain_ptr % configs, 'config_write_output_on_startup', config_write_output_on_startup)
+      if (config_write_output_on_startup) then
+         call mpas_stream_mgr_write(domain_ptr % streamManager, 'output', forceWriteNow=.true., ierr=ierr)
+
+         ! Reset config to false, so we don't write the state every coupling interval.
+         config_write_output_on_startup = .false.
+      end if
+
+      ! Initialize time average fields
+      block_ptr => domain_ptr % blocklist
+      do while(associated(block_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
+         call ocn_time_average_coupled_init(forcingPool)
+         block_ptr => block_ptr % next
+      end do
+
+      ! During integration, time level 1 stores the model state at the beginning of the
+      !   time step, and time level 2 stores the state advanced dt in time by timestep(...)
+      ! This integration loop continues for a single coupling interval.
+      do while (.not. mpas_is_alarm_ringing(domain_ptr % clock, coupleAlarmID, ierr=ierr))
+         call mpas_stream_mgr_read(domain_ptr % streamManager, ierr=ierr)
+         call mpas_stream_mgr_reset_alarms(domain_ptr % streamManager, direction=MPAS_STREAM_INPUT, ierr=ierr)
+
+         ! Build forcing arrays.
+         if (debugOn) call mpas_log_write('   Building forcing arrays')
+         block_ptr => domain_ptr % blocklist
+         do while(associated(block_ptr))
+            call mpas_pool_get_subpool(block_ptr % structs, 'mesh', meshPool)
+            call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
+            call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
+            call mpas_pool_get_subpool(block_ptr % structs, 'scratch', scratchPool)
+
+            call ocn_forcing_build_fraction_absorbed_array(meshPool, statePool, forcingPool, ierr, 1)
+
+            call mpas_timer_start("land_ice_build_arrays", .false.)
+            call ocn_surface_land_ice_fluxes_build_arrays(meshPool, &
+                                                          forcingPool, scratchPool, statePool, dt, ierr)
+            call mpas_timer_stop("land_ice_build_arrays")
+
+            call ocn_frazil_forcing_build_arrays(domain_ptr, meshPool, forcingPool, statePool, ierr)
+
+            ! Compute normalGMBolusVelocity, relativeSlope and RediDiffVertCoef if respective flags are turned on
+            if (config_use_Redi.or.config_use_GM) then
+              call ocn_gm_compute_Bolus_velocity(statePool, meshPool, scratchPool, timeLevelIn=1)
+            endif
+
+            block_ptr => block_ptr % next
+         end do
+         if (debugOn) call mpas_log_write('   Finished building forcing arrays')
+
+         ! Read forcing streams for next timestep
+         if (iam==0.and.debugOn) then
+            call mpas_log_write('   Reading forcing streams')
+         endif
+
+         ! read next time level data required for variable shortwave
+         call mpas_timer_start('io_shortwave',.false.)
+         call ocn_get_shortWaveData(domain_ptr % streamManager, domain_ptr, domain_ptr % clock, .false.)
+         call mpas_timer_stop('io_shortwave')
+
+         ! read next time level data required for ecosys forcing
+         call mpas_pool_get_config(domain_ptr % configs, 'config_use_ecosysTracers', config_use_ecosysTracers)
+         if (config_use_ecosysTracers) then
+           call mpas_timer_start('io_ecosys',.false.)
+           call ocn_get_ecosysData(domain_ptr % streamManager, domain_ptr, domain_ptr % clock, .false.)
+           call mpas_timer_stop('io_ecosys')
+         endif
+
+         ! read next time level data required for CFC forcing
+         call mpas_pool_get_config(domain_ptr % configs, 'config_use_CFCTracers', config_use_CFCTracers)
+         if (config_use_CFCTracers) then
+           call mpas_timer_start('io_CFC',.false.)
+           call ocn_get_CFCData(domain_ptr % streamManager, domain_ptr, domain_ptr % clock, .false.)
+           call mpas_timer_stop('io_CFC')
+         endif
+
+         ! read next time level data required for monthly surface salinity restoring
+         call mpas_pool_get_config(domain_ptr % configs, 'config_use_activeTracers_surface_restoring',  &
+                                                      config_use_activeTracers_surface_restoring)
+         call mpas_pool_get_config(domain_ptr % configs, 'config_use_surface_salinity_monthly_restoring',  &
+                                                      config_use_surface_salinity_monthly_restoring)
+         if (config_use_activeTracers_surface_restoring .and.  config_use_surface_salinity_monthly_restoring) then
+             if ( mpas_is_alarm_ringing(domain_ptr % clock, 'salinityDataReadAlarm', ierr=ierr) ) then
+                 call mpas_reset_clock_alarm(domain_ptr % clock, 'salinityDataReadAlarm', ierr=ierr)
+                 call mpas_timer_start('io_monthly_surface_salinity',.false.)
+                 call ocn_get_surfaceSalinityData(domain_ptr % streamManager, domain_ptr, domain_ptr % clock, .false.)
+                 call mpas_timer_stop('io_monthly_surface_salinity')
+             endif
+         endif
+         if (iam==0.and.debugOn) then
+            call mpas_log_write('   Finished reading forcing streams')
+         endif
+
+         itimestep = itimestep + 1
+         call mpas_advance_clock(domain_ptr % clock)
+
+         currTime = mpas_get_clock_time(domain_ptr % clock, MPAS_NOW, ierr)
+         call mpas_get_time(curr_time=currTime, dateTimeString=timeStamp, ierr=ierr)
+         ! write time stamp at every step
+         call mpas_dmpar_get_time(current_wallclock_time)
+         write (WCstring,'(F18.3)') current_wallclock_time
+         call mpas_log_write(trim(timeStamp) // '  WC time:' // WCstring)
+
+         ! pre-timestep analysis computation
+         if (debugOn) call mpas_log_write('   Starting analysis precompute', masterOnly=.true.)
+         call ocn_analysis_precompute(domain_ptr, ierr)
+         if (debugOn) call mpas_log_write('   Finished analysis precompute', masterOnly=.true.)
+
+         if (debugOn) call mpas_log_write('   Performing forward update')
+         call mpas_timer_start("time integration", .false.)
+         call ocn_timestep(domain_ptr, dt, timeStamp)
+         call mpas_timer_stop("time integration")
+         if (debugOn) call mpas_log_write('   Finished performing forward update')
+
+         ! Move time level 2 fields back into time level 1 for next time step
+         block_ptr => domain_ptr % blocklist
+         do while(associated(block_ptr))
+            call mpas_pool_get_subpool(block_ptr % structs, 'state', statePool)
+            call mpas_pool_shift_time_levels(statePool)
+            block_ptr => block_ptr % next
+         end do
+
+         if (debugOn) call mpas_log_write('   Computing analysis members')
+         call ocn_analysis_compute(domain_ptr, ierr) 
+         if (iam==0.and.debugOn) then
+            call mpas_log_write( '   Finished computing analysis members')
+            call mpas_log_write('   Preparing analysis members for restart')
+         endif
+         call ocn_analysis_restart(domain_ptr, ierr) 
+         if (iam==0.and.debugOn) then
+            call mpas_log_write('   Finished preparing analysis members for restart')
+            call mpas_log_write('   Writing analysis member output')
+         endif
+         call ocn_analysis_write(domain_ptr, ierr)
+         if (debugOn) call mpas_log_write('   Finished writing analysis member output')
+
+         ! Reset any restart alarms to prevent restart files being written without the coupler requesting it.
+         if (debugOn) call mpas_log_write('   Resetting restart alarms')
+         call mpas_stream_mgr_begin_iteration(domain_ptr % streamManager)
+
+         do while ( mpas_stream_mgr_get_next_stream( domain_ptr % streamManager, streamID=streamName, &
+                    directionProperty=streamDirection, activeProperty=streamActive ) )
+
+            if ( streamActive .and. streamDirection == MPAS_STREAM_INPUT_OUTPUT ) then
+               call mpas_stream_mgr_reset_alarms(domain_ptr % streamManager, streamID=streamName, ierr=ierr)
+            end if
+         end do
+         if (debugOn) call mpas_log_write('   Finished resetting restart alarms')
+
+         if (debugOn) call mpas_log_write('   Writing output streams')
+         call mpas_stream_mgr_write(domain_ptr % streamManager, streamID='output', ierr=ierr)
+         call mpas_stream_mgr_reset_alarms(domain_ptr % streamManager, streamID='output', ierr=ierr)
+
+         call mpas_stream_mgr_write(domain_ptr % streamManager, ierr=ierr)
+         call mpas_stream_mgr_reset_alarms(domain_ptr % streamManager, direction=MPAS_STREAM_OUTPUT, ierr=ierr)
+         if (iam==0.and.debugOn) then
+            call mpas_log_write('   Finished writing output streams')
+            call mpas_log_write('   Validating ocean state')
+         endif
+
+         call ocn_validate_state(domain_ptr, timeLevel=1)
+         if (debugOn) call mpas_log_write('   Completed validating ocean state')
+
+         if (debugOn) call mpas_log_write('Completed timestep '//trim(timeStamp))
+      end do
+
+      ! update coupled variables that get calculated on coupling intervals
+      ! NOTE: could be moved to subroutine
+      ! time filter ssh gradient
+      block_ptr => domain_ptr % blocklist
+      do while(associated(block_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'forcing', forcingPool)
+         call mpas_pool_get_dimension(forcingPool, 'index_avgSSHGradientZonal', index_avgZonalSSHGradient)
+         call mpas_pool_get_dimension(forcingPool, 'index_avgSSHGradientMeridional', index_avgMeridionalSSHGradient)
+         call mpas_pool_get_array(forcingPool, 'avgSSHGradient', avgSSHGradient)
+         call mpas_pool_get_array(forcingPool, 'filteredSSHGradientZonal', filteredSSHGradientZonal)
+         call mpas_pool_get_array(forcingPool, 'filteredSSHGradientMeridional', filteredSSHGradientMeridional)
+         call mpas_pool_get_config(domain_ptr % configs, 'config_ssh_grad_relax_timescale', &
+                                                      config_ssh_grad_relax_timescale)
+         if (config_ssh_grad_relax_timescale < real(ocn_cpl_dt,RKIND)) then
+            filteredSSHGradientZonal = avgSSHGradient(index_avgZonalSSHGradient, :)
+            filteredSSHGradientMeridional = avgSSHGradient(index_avgMeridionalSSHGradient, :)
+         else
+            timeFilterFactor = real(ocn_cpl_dt,RKIND) / config_ssh_grad_relax_timescale
+            filteredSSHGradientZonal = filteredSSHGradientZonal * (1.0_RKIND - timeFilterFactor) + &
+                 avgSSHGradient(index_avgZonalSSHGradient, :) * timeFilterFactor
+            filteredSSHGradientMeridional = filteredSSHGradientMeridional * (1.0_RKIND - timeFilterFactor) + &
+                 avgSSHGradient(index_avgMeridionalSSHGradient, :) * timeFilterFactor
+         endif
+         block_ptr => block_ptr % next
+      end do
+
+      ! Check if coupler wants us to write a restart file.
+      ! We only write restart files at the end of a coupling interval
+
+      if (ESMF_AlarmIsRinging(alarm, rc=rc)) then
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         call ESMF_AlarmRingerOff( alarm, rc=rc )
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+         if(trim(config_sw_absorption_type)=='ohlmann00') call ocn_shortwave_forcing_write_restart(domain_ptr)
+
+         if (config_use_ecosysTracers) call ocn_ecosys_forcing_write_restart(domain_ptr)
+
+         if (config_use_CFCTracers) call ocn_CFC_forcing_write_restart(domain_ptr)
+
+         if (config_use_activeTracers_surface_restoring .and. config_use_surface_salinity_monthly_restoring)  &
+             call ocn_salinity_restoring_forcing_write_restart(domain_ptr)
+         ! Write a restart file, because the coupler asked for it.
+         if (debugOn) call mpas_log_write('Writing restart streams')
+         call mpas_stream_mgr_begin_iteration(domain_ptr % streamManager)
+
+         do while ( mpas_stream_mgr_get_next_stream( domain_ptr % streamManager, streamID=streamName, &
+                    directionProperty=streamDirection, activeProperty=streamActive ) )
+
+            if ( streamActive .and. streamDirection == MPAS_STREAM_INPUT_OUTPUT ) then
+               if (debugOn) call mpas_log_write('   Writing stream ' // trim(streamName))
+               call mpas_stream_mgr_write(domain_ptr % streamManager, forceWriteNow=.true., streamID=streamName, ierr=ierr)
+               if (debugOn) call mpas_log_write('   Finished writing stream ' // trim(streamName))
+            end if
+         end do
+
+         if ( iam == 0 ) then
+            open(22, file=config_restart_timestamp_name, form='formatted', status='replace')
+            write(22, *) trim(timeStamp)
+            close(22)
+         end if
+
+         if (debugOn) call mpas_log_write('Finished writing restart streams')
+      endif
+
+      ! Export state to coupler
+      if (debugOn) call mpas_log_write('Exporting ocean state')
+      call ocn_export(exportState, flds_scalar_name, domain_ptr,     &
+                      errorCode, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      if (debugOn) call mpas_log_write('Finished exporting ocean state')
+
+!DD adapt this statement to the esmf clock
+!?!?      call check_clocks_sync(domain_ptr % clock, Eclock, ierr)
+
+      ! Reset I/O logs
+      call shr_file_setLogUnit (shrlogunit)
+      call shr_file_setLogLevel(shrloglev)
+
+      call mpas_log_write('=== Completed coupling interval in ocn_run_nuopc. ===', flushNow=.true.)
 
   end subroutine ModelAdvance
 
@@ -1367,43 +1693,44 @@ print*,'model_advance_loop'
     ! local variables
     integer  :: ierr              ! error code
     character(len=*),parameter :: subname='ocn_comp_nuopc:(ModelFinalize)'
+    integer  :: iam, SHRLOGLEV, SHRLOGUNIT
     !--------------------------------
 
     rc = ESMF_SUCCESS
     if (dbug > 5) call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
-      iErr = domain_ptr % core % core_finalize(domain_ptr)
-      if ( iErr /= 0 ) then
-         call mpas_log_write('Core finalize failed for core '//trim(domain_ptr % core % coreName), messageType=MPAS_LOG_CRIT)
-      end if
+!-----------------------------------------------------------------------
+    iam = domain_ptr % dminfo % my_proc_id
 
-      call mpas_timer_stop('total time')
-      call mpas_timer_write_header()
-      call mpas_timer_write()
-      call mpas_timer_finalize(domain_ptr)
+    ! Set MPAS Log module instance
+    mpas_log_info => domain_ptr % logInfo
 
-      !
-      ! Finalize infrastructure
-      !
-      call MPAS_stream_mgr_finalize(domain_ptr % streamManager)
+    ! Setup I/O logs
+    call shr_file_getLogUnit (shrlogunit)
+    call shr_file_getLogLevel(shrloglev)
+    call shr_file_setLogUnit (ocnLogUnit)
 
-      ! Print out log stats and close log file
-      !   (Do this after timer stats are printed and stream mgr finalized,
-      !    but before framework is finalized because domain is destroyed there.)
-      call mpas_log_finalize(iErr)
-      if ( iErr /= 0 ) then
-         call mpas_dmpar_global_abort('ERROR: Log finalize failed for core ' // trim(domain_ptr % core % coreName))
-      end if
+    ! Finalize MPASO
+    iErr = domain_ptr % core % core_finalize(domain_ptr)
+    if ( iErr /= 0 ) then
+       call mpas_log_write('Core finalize failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
+    end if
 
-      call mpas_framework_finalize(domain_ptr % dminfo, domain_ptr)
+    call mpas_timer_write()
 
-      deallocate(corelist % domainlist)
-      deallocate(corelist)
+    call MPAS_stream_mgr_finalize(domain_ptr % streamManager)
 
-    !?!  exit the communication environment
-    !?call exit_message_environment(ErrorCode)
+    call mpas_log_finalize(iErr)
+    if ( iErr /= 0 ) then
+       write(ocnLogUnit,*) 'ERROR: log finalize failed for core ' // trim(domain_ptr % core % coreName)
+       call mpas_dmpar_abort(domain_ptr % dminfo)
+    end if
 
-    if (dbug > 5) call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
+    call mpas_framework_finalize(domain_ptr % dminfo, domain_ptr, io_system)
+
+    ! Reset I/O logs
+    call shr_file_setLogUnit (shrlogunit)
+    call shr_file_setLogLevel(shrloglev)
 
   end subroutine ModelFinalize
 
