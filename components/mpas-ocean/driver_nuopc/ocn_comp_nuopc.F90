@@ -19,7 +19,7 @@ module ocn_comp_nuopc
   use NUOPC_Model           , only : NUOPC_ModelGet
   !use perf_mod              , only : t_startf, t_stopf
   use ocn_import_export     , only : ocn_advertise_fields, ocn_realize_fields
-  use ocn_import_export     , only : ocn_import, ocn_export !, tlast_coupled
+  use ocn_import_export     , only : ocn_import, ocn_export, ocn_cpl_dt !, tlast_coupled
   use nuopc_shr_methods     , only : chkerr, state_setscalar, state_getscalar, state_diagnose, alarmInit
   use nuopc_shr_methods     , only : set_component_logging, get_component_instance, log_clock_advance
   use shr_kind_mod          , only : cl=>shr_kind_cl, cs=>shr_kind_cs, SHR_KIND_CX
@@ -44,7 +44,7 @@ module ocn_comp_nuopc
   use ocn_tracer_short_wave_absorption_variable
   use ocn_analysis_driver
   use ocn_time_integration
-  use ocn_frazil_forcing
+  use ocn_frazil_forcing 
   use ocn_surface_land_ice_fluxes
   use ocn_forcing
   use ocn_time_average_coupled
@@ -78,11 +78,10 @@ module ocn_comp_nuopc
   type (dm_info), pointer :: dminfo
   type (domain_type), pointer :: domain_ptr
   type (iosystem_desc_t), pointer :: io_system 
-   integer :: itimestep, &  ! time step number for MPAS
-              ocn_cpl_dt    ! length of coupling interval in seconds - set by coupler/ESMF
+  integer :: itimestep   ! time step number for MPAS
 
   integer :: ocnLogUnit ! unit number for ocn log
-   character (len=*), parameter :: coupleAlarmID = 'coupling'
+  character (len=*), parameter :: coupleAlarmID = 'coupling'
    character(len=StrKIND) :: coupleTimeStamp
 
 ! !PRIVATE MODULE VARIABLES
@@ -834,7 +833,8 @@ contains
     EMesh = ESMF_MeshCreate(filename=trim(cvalue), fileformat=ESMF_FILEFORMAT_ESMFMESH, &
          elementDistgrid=Distgrid, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    mastertask = iam == domain_ptr % dminfo % my_proc_id
+    !mastertask = iam == domain_ptr % dminfo % my_proc_id
+    mastertask = iam == 0
     if (mastertask) then
        write(stdout,*)'mesh file for mpaso domain is ',trim(cvalue)
     end if
@@ -844,7 +844,8 @@ contains
     !-----------------------------------------------------------------
 
     call ocn_realize_fields(gcomp, mesh=Emesh, flds_scalar_name=flds_scalar_name, &
-         flds_scalar_num=flds_scalar_num, mastertask = mastertask, lmpicom = lmpicom,           &
+         flds_scalar_num=flds_scalar_num,                      &
+         mastertask = mastertask, lmpicom = lmpicom,           &
          domain = domain_ptr, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
