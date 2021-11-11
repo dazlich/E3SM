@@ -7,7 +7,10 @@ module ocn_import_export
   use mpas_derived_types
   use mpas_field_routines
   use mpas_pool_routines
-  use mpas_dmpar, only : mpas_dmpar_exch_halo_field
+  use mpas_dmpar, only : mpas_dmpar_exch_halo_field, mpas_dmpar_sum_real
+  use ocn_constants, only : RHO_SW, CP_SW, T0_KELVIN
+  use ocn_config, only : CONFIG_FRAZIL_HEAT_OF_FUSION
+  use ocn_equation_of_state, only : ocn_freezing_temperature
   
   use shr_kind_mod,          only: cl=>shr_kind_cl, cs=>shr_kind_cs
   use shr_const_mod,         only: shr_const_spval, radius=>SHR_CONST_REARTH, pi=>shr_const_pi
@@ -28,6 +31,8 @@ module ocn_import_export
   private :: fldlist_realize
   private :: state_FldChk
 
+  integer, public :: ocn_cpl_dt    ! length of coupling interval in seconds - set by coupler/ESMF
+  
   ! Private module data
 
   type fld_list_type
@@ -135,6 +140,8 @@ contains
     call fldlist_add(fldsFrOcn_num, fldsFrOcn, 'So_dhdx')
     call fldlist_add(fldsFrOcn_num, fldsFrOcn, 'So_dhdy')
     call fldlist_add(fldsFrOcn_num, fldsFrOcn, 'So_bldepth')
+    call fldlist_add(fldsFrOcn_num, fldsFrOcn, 'Fioo_q')
+    call fldlist_add(fldsFrOcn_num, fldsFrOcn, 'Fioo_frazil')
 
     do n = 1,fldsFrOcn_num
        call NUOPC_Advertise(exportState, standardName=fldsFrOcn(n)%stdname, &
@@ -380,6 +387,7 @@ contains
     real (r8), pointer   :: fioi_melth(:)
     real (r8), pointer   :: fioi_salt(:)
     real (r8), pointer   :: Si_ifrac(:)
+    real (r8), pointer   :: Si_bpress(:)
     !
     integer              :: fieldCount
     character (cl) :: fldname
@@ -404,7 +412,8 @@ contains
                                                 shortWaveHeatFlux, longWaveHeatFluxUp, &
                                                 seaIceFreshWaterFlux, seaIceHeatFlux,  &
                                                 seaIceSalinityFlux, atmosphericPressure, &
-                                                iceFraction
+                                                iceFraction, removedRiverRunoffFlux,  &
+                                                removedIceRunoffFlux, seaIcePressure, latCell
 
     type (field1DReal),         pointer :: windStressZonalField, windStressMeridionalField, &
                                            evaporationFluxField, rainFluxField,             &
@@ -414,10 +423,14 @@ contains
                                            shortWaveHeatFluxField, longWaveHeatFluxUpField, &
                                            seaIceFreshWaterFluxField, seaIceHeatFluxField,  &
                                            seaIceSalinityFluxField, atmosphericPressureField, &
-                                           iceFractionField
+                                           iceFractionField, seaIcePressureField
 
     character (cl), allocatable :: fieldNameList(:)
     character(len=*), parameter :: subname='(ocn_import_export:ocn_import)'
+    logical, pointer :: config_remove_AIS_coupler_runoff
+    real (kind=RKIND), pointer :: totalRemovedRiverRunoffFlux, totalRemovedIceRunoffFlux
+    real (kind=RKIND) :: removedRiverRunoffFluxThisProc, removedIceRunoffFluxThisProc
+    real (kind=RKIND) :: removedRiverRunoffFluxReduced, removedIceRunoffFluxReduced
     !-----------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
@@ -433,9 +446,6 @@ contains
     !-----------------------------------------------------------------------
     ! from mediator (virtual ocean)
     !-----------------------------------------------------------------------
-
-    !  unpack and distribute wind stress, then convert to correct units
-    !  and rotate components to local coordinates
 
     ! zonal wind and meridional wind stress  (W/m2)
     call state_getfldptr(importState, 'Foxx_taux', foxx_taux, rc)
@@ -513,6 +523,8 @@ contains
     !-----------------------------------------------------------------------
     ! copy into component variables
     !-----------------------------------------------------------------------
+    removedRiverRunoffFluxThisProc = 0.0_RKIND
+    removedIceRunoffFluxThisProc = 0.0_RKIND
     cell_offset = 0
     block => domain % blocklist
     do while (associated(block))
@@ -546,6 +558,16 @@ contains
        call mpas_pool_get_array(forcingPool, 'riverRunoffFlux', riverRunoffFlux)
        call mpas_pool_get_array(forcingPool, 'iceRunoffFlux', iceRunoffFlux)
 
+       call mpas_pool_get_config(domain % configs, 'config_remove_AIS_coupler_runoff', config_remove_AIS_coupler_runoff)
+       if (config_remove_AIS_coupler_runoff) then
+          call mpas_pool_get_array(forcingPool, 'removedRiverRunoffFlux', removedRiverRunoffFlux)
+          call mpas_pool_get_array(forcingPool, 'removedIceRunoffFlux', removedIceRunoffFlux)
+          call mpas_pool_get_array(meshPool, 'latCell', latCell)
+          ! Initialize these fields
+          removedRiverRunoffFlux(:) = 0.0_RKIND
+          removedIceRunoffFlux(:) = 0.0_RKIND
+       endif
+
        do iCell = 1, nCells
           gcell = iCell + cell_offset
              
@@ -555,7 +577,24 @@ contains
           latentHeatFlux(iCell)       = foxx_lat  (gcell) * med2mod_areacor(gcell)
           sensibleHeatFlux(iCell)     = foxx_sen  (gcell) * med2mod_areacor(gcell)
           riverRunoffFlux(iCell)      = foxx_rofl (gcell) * med2mod_areacor(gcell)
+           if (config_remove_AIS_coupler_runoff) then
+              if (latCell(i) < -1.04719666667_RKIND) then ! 60S in radians
+                 removedRiverRunoffFlux(i) = riverRunoffFlux(i)
+                 riverRunoffFlux(i) = 0.0_RKIND
+                 removedRiverRunoffFluxThisProc = removedRiverRunoffFluxThisProc + removedRiverRunoffFlux(i)
+               endif
+           endif
           iceRunoffFlux(iCell)        = foxx_rofi (gcell) * med2mod_areacor(gcell)
+           if(iceRunoffFlux(i) < 0.0_RKIND) then
+               call shr_sys_abort ('Error: incoming rofi_F is negative')
+           end if
+           if (config_remove_AIS_coupler_runoff) then
+              if (latCell(i) < -1.04719666667_RKIND) then ! 60S in radians
+                 removedIceRunoffFlux(i) = iceRunoffFlux(i)
+                 iceRunoffFlux(i) = 0.0_RKIND
+                 removedIceRunoffFluxThisProc = removedIceRunoffFluxThisProc + removedIceRunoffFlux(i)
+              endif
+           endif
           shortWaveHeatFlux(iCell)    = foxx_swnet(gcell) * med2mod_areacor(gcell)
           longWaveHeatFluxUp(iCell)   = foxx_lwup (gcell) * med2mod_areacor(gcell)
           atmosphericPressure(iCell)  = Sa_pslv   (gcell) * med2mod_areacor(gcell)
@@ -566,6 +605,7 @@ contains
           seaIceHeatFlux(iCell)       = fioi_melth(gcell) * med2mod_areacor(gcell)
           seaIceSalinityFlux(iCell)   = fioi_salt (gcell) * med2mod_areacor(gcell)
           iceFraction(iCell)          = Si_ifrac  (gcell) * med2mod_areacor(gcell)
+          seaIcePressure(iCell)       = Si_bpress (gcell) * med2mod_areacor(gcell)
        end do
 
        if (ANY(shortWaveHeatFlux < qsw_eps)) then
@@ -603,6 +643,7 @@ contains
       call mpas_pool_get_field(forcingPool, 'atmosphericPressure', atmosphericPressureField)
       call mpas_pool_get_field(forcingPool, 'iceFraction', iceFractionField)
       call mpas_pool_get_field(forcingPool, 'iceRunoffFlux', iceRunoffFluxField)
+      call mpas_pool_get_field(forcingPool, 'seaIcePressure', seaIcePressureField)
       if ( windStressZonalField % isActive ) &
          call mpas_dmpar_exch_halo_field(windStressZonalField)
       if ( windStressMeridionalField % isActive ) &
@@ -637,8 +678,25 @@ contains
          call mpas_dmpar_exch_halo_field(atmosphericPressureField)
       if ( iceFractionField % isActive ) &
          call mpas_dmpar_exch_halo_field(iceFractionField)
-      if ( iceRunoffFluxField % isActive ) &
-         call mpas_dmpar_exch_halo_field(iceRunoffFluxField)
+      if ( seaIcePressureField % isActive ) &
+         call mpas_dmpar_exch_halo_field(seaIcePressureField)
+
+   ! global sum of removed runoff
+   if (config_remove_AIS_coupler_runoff) then
+      call MPAS_dmpar_sum_real(domain % dminfo, removedRiverRunoffFluxThisProc, removedRiverRunoffFluxReduced)
+      call MPAS_dmpar_sum_real(domain % dminfo, removedIceRunoffFluxThisProc, removedIceRunoffFluxReduced)
+      block => domain % blocklist
+      do while(associated(block))
+         call mpas_pool_get_subpool(block % structs, 'forcing', forcingPool)
+
+         call mpas_pool_get_array(forcingPool, 'totalRemovedRiverRunoffFlux', totalRemovedRiverRunoffFlux)
+         call mpas_pool_get_array(forcingPool, 'totalRemovedIceRunoffFlux', totalRemovedIceRunoffFlux)
+         totalRemovedRiverRunoffFlux = removedRiverRunoffFluxReduced
+         totalRemovedIceRunoffFlux = removedIceRunoffFluxReduced
+
+         block => block % next
+      end do
+   endif
 
     if (dbug > 5) call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
@@ -672,16 +730,18 @@ contains
     ! local variables - mpas names
     integer :: iCell, nCells
     integer, dimension(:), pointer :: nCellsArray
-    real (kind=RKIND), dimension(:), pointer :: boundaryLayerDepth
+    real (kind=RKIND), dimension(:), pointer :: boundaryLayerDepth,     &
+                          seaIceEnergy, accumulatedFrazilIceMass, frazilSurfacePressure
     integer, pointer :: index_avgZonalSSHGradient, index_avgMeridionalSSHGradient
     real (kind=RKIND), dimension(:,:), pointer :: avgSSHGradient,avgSurfaceVelocity
-    real (kind=RKIND), dimension(:,:), pointer :: avgTracersSurfaceValue
+    real (kind=RKIND), dimension(:,:), pointer :: avgTracersSurfaceValue, layerThickness
     integer, pointer :: index_temperatureSurfaceValue, index_salinitySurfaceValue, &
                         index_avgZonalSurfaceVelocity, index_avgMeridionalSurfaceVelocity
 
     type (mpas_pool_type), pointer :: diagnosticsPool
     type (mpas_pool_type), pointer :: forcingPool
     type (mpas_pool_type), pointer :: meshPool
+    type (mpas_pool_type), pointer :: statePool
     type (block_type), pointer :: block
     integer gcell, cell_offset
 
@@ -694,6 +754,12 @@ contains
     real (r8), pointer   :: So_dhdx(:)
     real (r8), pointer   :: So_dhdy(:)
     real (r8), pointer   :: So_omask(:)
+    real (r8), pointer   :: Fioo_q(:)
+    real (r8), pointer   :: Fioo_frazil(:)
+    logical, pointer :: frazilIceActive
+    logical :: keepFrazil
+    real (kind=RKIND) :: surfaceFreezingTemp
+
     !-----------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
@@ -746,6 +812,22 @@ contains
     So_bldepth(:) = shr_const_spval
 
     !-----------------------------------------------------------------------
+    !  Frazil mass flux
+    !-----------------------------------------------------------------------
+
+    call state_getfldptr(exportState, 'Fioo_frazil', Fioo_frazil, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    Fioo_frazil(:) = shr_const_spval
+
+    !-----------------------------------------------------------------------
+    !  freezing_melting_potential
+    !-----------------------------------------------------------------------
+
+    call state_getfldptr(exportState, 'Fioo_q', Fioo_q, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    Fioo_q(:) = shr_const_spval
+
+    !-----------------------------------------------------------------------
     ! ssh gradients
     !-----------------------------------------------------------------------
 
@@ -759,6 +841,11 @@ contains
     !-----------------------------------------------------------------------
     ! copy into mediator variables
     !-----------------------------------------------------------------------
+    call mpas_pool_get_package(domain % packages, 'frazilIceActive', frazilIceActive)
+
+    Fioo_q     (:) = 0.0_RKIND
+    Fioo_frazil(:) = 0.0_RKIND
+    
     cell_offset = 0
     block => domain % blocklist
     do while (associated(block))
@@ -778,6 +865,13 @@ contains
        call mpas_pool_get_dimension(forcingPool, 'index_avgSSHGradientZonal', index_avgZonalSSHGradient)
        call mpas_pool_get_dimension(forcingPool, 'index_avgSSHGradientMeridional', index_avgMeridionalSSHGradient)
        call mpas_pool_get_array(forcingPool, 'avgSSHGradient', avgSSHGradient)
+       if ( frazilIceActive ) then
+          call mpas_pool_get_subpool(block % structs, 'state', statePool)
+          call mpas_pool_get_array(forcingPool, 'seaIceEnergy', seaIceEnergy)
+          call mpas_pool_get_array(forcingPool, 'frazilSurfacePressure', frazilSurfacePressure)
+          call mpas_pool_get_array(statePool, 'accumulatedFrazilIceMass', accumulatedFrazilIceMass, 1)
+          call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, 1)
+       end if
 
        ! from forcing
        call mpas_pool_get_array(diagnosticsPool, 'boundaryLayerDepth', boundaryLayerDepth)
@@ -792,6 +886,39 @@ contains
           So_dhdy   (gcell) = avgSSHGradient(index_avgMeridionalSSHGradient,iCell)
           So_bldepth(gcell) = boundaryLayerDepth(iCell)
        end do
+
+       if ( frazilIceActive ) then
+          ! negative when frazil ice can be melted
+
+          do iCell = 1, nCells
+             gcell = iCell + cell_offset
+
+             if ( accumulatedFrazilIceMass(i) > 0.0_RKIND ) then
+
+              seaIceEnergy(i) = accumulatedFrazilIceMass(i) * config_frazil_heat_of_fusion 
+
+             ! Otherwise calculate the melt potential where avgTracersSurfaceValue represents only the
+             ! top layer of the ocean
+             else
+
+              surfaceFreezingTemp = ocn_freezing_temperature(salinity=avgTracersSurfaceValue(index_salinitySurfaceValue, i), &
+                 pressure=0.0_RKIND,  inLandIceCavity=.false.) 
+
+              seaIceEnergy(i) = min(rho_sw*cp_sw*layerThickness(1, i)*( surfaceFreezingTemp + T0_Kelvin &
+                              - avgTracersSurfaceValue(index_temperatureSurfaceValue, i) ), 0.0_RKIND )
+
+             end if
+
+             Fioo_q     (gcell) = seaIceEnergy(i) / ocn_cpl_dt
+             Fioo_frazil(gcell) = accumulatedFrazilIceMass(i) / ocn_cpl_dt
+
+             ! Reset SeaIce Energy and Accumulated Frazil Ice
+             seaIceEnergy(i) = 0.0_RKIND
+             accumulatedFrazilIceMass(i) = 0.0_RKIND
+             frazilSurfacePressure(i) = 0.0_RKIND
+          end do
+       endif
+
        cell_offset = cell_offset + nCells
        
        block => block % next
