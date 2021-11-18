@@ -97,6 +97,7 @@ contains
 
     ! from ice
     call fldlist_add(fldsToOcn_num, fldsToOcn, 'Si_ifrac')
+    call fldlist_add(fldsToOcn_num, fldsToOcn, 'Si_bpress')
     call fldlist_add(fldsToOcn_num, fldsToOcn, 'Fioi_melth')
     call fldlist_add(fldsToOcn_num, fldsToOcn, 'Fioi_meltw')
     call fldlist_add(fldsToOcn_num, fldsToOcn, 'Fioi_salt')
@@ -495,6 +496,9 @@ contains
     ! ice fraction
     call state_getfldptr(importState, 'Si_ifrac', si_ifrac, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    ! ice base pressure
+    call state_getfldptr(importState, 'Si_bpress', si_bpress, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
     ! heat flux from sea ice snow & ice melt (W/m2)
     call state_getfldptr(importState, 'Fioi_melth', fioi_melth, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
@@ -553,6 +557,7 @@ contains
        call mpas_pool_get_array(forcingPool, 'seaIceHeatFlux', seaIceHeatFlux)
        call mpas_pool_get_array(forcingPool, 'seaIceSalinityFlux', seaIceSalinityFlux)
        call mpas_pool_get_array(forcingPool, 'iceFraction', iceFraction)
+       call mpas_pool_get_array(forcingPool, 'seaIcePressure', seaIcePressure)
 
        ! from river
        call mpas_pool_get_array(forcingPool, 'riverRunoffFlux', riverRunoffFlux)
@@ -585,14 +590,14 @@ contains
                endif
            endif
           iceRunoffFlux(iCell)        = foxx_rofi (gcell) * med2mod_areacor(gcell)
-           if(iceRunoffFlux(i) < 0.0_RKIND) then
+           if(iceRunoffFlux(iCell) < 0.0_RKIND) then
                call shr_sys_abort ('Error: incoming rofi_F is negative')
            end if
            if (config_remove_AIS_coupler_runoff) then
-              if (latCell(i) < -1.04719666667_RKIND) then ! 60S in radians
-                 removedIceRunoffFlux(i) = iceRunoffFlux(i)
-                 iceRunoffFlux(i) = 0.0_RKIND
-                 removedIceRunoffFluxThisProc = removedIceRunoffFluxThisProc + removedIceRunoffFlux(i)
+              if (latCell(iCell) < -1.04719666667_RKIND) then ! 60S in radians
+                 removedIceRunoffFlux(iCell) = iceRunoffFlux(iCell)
+                 iceRunoffFlux(iCell) = 0.0_RKIND
+                 removedIceRunoffFluxThisProc = removedIceRunoffFluxThisProc + removedIceRunoffFlux(iCell)
               endif
            endif
           shortWaveHeatFlux(iCell)    = foxx_swnet(gcell) * med2mod_areacor(gcell)
@@ -893,29 +898,29 @@ contains
           do iCell = 1, nCells
              gcell = iCell + cell_offset
 
-             if ( accumulatedFrazilIceMass(i) > 0.0_RKIND ) then
+             if ( accumulatedFrazilIceMass(iCell) > 0.0_RKIND ) then
 
-              seaIceEnergy(i) = accumulatedFrazilIceMass(i) * config_frazil_heat_of_fusion 
+              seaIceEnergy(iCell) = accumulatedFrazilIceMass(iCell) * config_frazil_heat_of_fusion 
 
              ! Otherwise calculate the melt potential where avgTracersSurfaceValue represents only the
              ! top layer of the ocean
              else
 
-              surfaceFreezingTemp = ocn_freezing_temperature(salinity=avgTracersSurfaceValue(index_salinitySurfaceValue, i), &
+              surfaceFreezingTemp = ocn_freezing_temperature(salinity=avgTracersSurfaceValue(index_salinitySurfaceValue, iCell), &
                  pressure=0.0_RKIND,  inLandIceCavity=.false.) 
 
-              seaIceEnergy(i) = min(rho_sw*cp_sw*layerThickness(1, i)*( surfaceFreezingTemp + T0_Kelvin &
-                              - avgTracersSurfaceValue(index_temperatureSurfaceValue, i) ), 0.0_RKIND )
+              seaIceEnergy(iCell) = min(rho_sw*cp_sw*layerThickness(1, iCell)*( surfaceFreezingTemp + T0_Kelvin &
+                              - avgTracersSurfaceValue(index_temperatureSurfaceValue, iCell) ), 0.0_RKIND )
 
              end if
 
-             Fioo_q     (gcell) = seaIceEnergy(i) / ocn_cpl_dt
-             Fioo_frazil(gcell) = accumulatedFrazilIceMass(i) / ocn_cpl_dt
+             Fioo_q     (gcell) = seaIceEnergy(iCell) / ocn_cpl_dt
+             Fioo_frazil(gcell) = accumulatedFrazilIceMass(iCell) / ocn_cpl_dt
 
              ! Reset SeaIce Energy and Accumulated Frazil Ice
-             seaIceEnergy(i) = 0.0_RKIND
-             accumulatedFrazilIceMass(i) = 0.0_RKIND
-             frazilSurfacePressure(i) = 0.0_RKIND
+             seaIceEnergy(iCell) = 0.0_RKIND
+             accumulatedFrazilIceMass(iCell) = 0.0_RKIND
+             frazilSurfacePressure(iCell) = 0.0_RKIND
           end do
        endif
 
