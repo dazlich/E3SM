@@ -522,7 +522,7 @@ contains
        call mpas_log_write('Namelist setup failed for core ' // trim(domain_ptr % core % coreName), MPAS_LOG_CRIT)
     end if
 
-    call mpas_framework_init_phase2(domain_ptr, io_system)
+    call mpas_framework_init_phase2(domain_ptr)!, io_system)
 
     ! Define package variables
     ierr = domain_ptr % core % define_packages(domain_ptr % packages)
@@ -565,7 +565,7 @@ contains
 
        ! TOOD (mvertens, 2019-03-21): need to get the perpetual run working
 
-       if (trim(runtype) /= 'initial') then
+       if (trim(runtype) == 'initial') then
          ! Turn off restart
          call mpas_pool_get_config(domain_ptr % configs, "config_do_restart", tempLogicalConfig)
          tempLogicalConfig = .false.
