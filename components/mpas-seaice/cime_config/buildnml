@@ -109,7 +109,7 @@ def buildnml(case, caseroot, compname):
 
     elif ice_grid == 'oQU120':
         decomp_date = '151209'
-        decomp_prefix = 'mpas-cice.graph.info.'
+        decomp_prefix = 'culled.graph.info.'
         grid_date = '151209'
         grid_prefix = 'seaice.oQU120km'
         if ice_ic_mode == 'spunup':
@@ -251,7 +251,8 @@ def buildnml(case, caseroot, compname):
     # Note: this is not setup for multiple instances
     #--------------------------------------------------------------------
 
-    input_file = "{}/ice/mpas-cice/{}/{}.{}.nc".format(din_loc_root, ice_mask, grid_prefix, grid_date)
+    #input_file = "{}/ice/mpas-cice/{}/{}.{}.nc".format(din_loc_root, ice_mask, grid_prefix, grid_date)
+    input_file = "/glade/work/dazlich/seaice/seaice_QU_120km.nc"
     if run_type == 'hybrid' or run_type == 'branch':
         input_file = "{}/{}.mpassi.rst.{}_{}.nc".format(rundir, run_refcase, run_refdate, run_reftod)
         expect(os.path.exists(input_file), " ERROR mpassi buildnml: missing specified restart file for branch or hybrid run: {}".format(input_file))
@@ -265,8 +266,8 @@ def buildnml(case, caseroot, compname):
 
     with open(os.path.join(casebuild, "mpassi.input_data_list"), "w") as input_list:
         input_list.write("mesh = {}\n".format(input_file))
-        input_list.write("snow_data = {}/ice/mpas-cice/general/snicar_drdt_bst_fit_60_c04262019.nc\n".format(din_loc_root))
-        input_list.write("snicar_data = {}/ice/mpas-cice/general/snicar_optics_5bnd_snow_and_aerosols.nc\n".format(din_loc_root))
+        input_list.write("snow_data = /glade/work/dazlich/seaice/snicar_drdt_bst_fit_60_c04262019.nc\n")
+        input_list.write("snicar_data = /glade/work/dazlich/seaice/snicar_optics_5bnd_snow_and_aerosols.nc\n")
         if points_file != '':
             input_list.write("points = {}/ice/mpas-cice/{}/{}\n".format(din_loc_root, ice_mask, points_file))
         if iceberg_mode == 'data':
@@ -485,14 +486,14 @@ def buildnml(case, caseroot, compname):
         lines.append('<immutable_stream name="SnowAgingPropertiesInput"')
         lines.append('                  type="input"')
         lines.append('                  io_type="{}"'.format(ice_pio_typename))
-        lines.append('                  filename_template="{}/ice/mpas-cice/general/snicar_drdt_bst_fit_60_c04262019.nc"'.format(din_loc_root))
+        lines.append('                  filename_template="/glade/work/dazlich/seaice/snicar_drdt_bst_fit_60_c04262019.nc"')
         lines.append('                  filename_interval="none"')
         lines.append('                  input_interval="initial_only" />')
         lines.append('')
         lines.append('<immutable_stream name="SnicarInput"')
         lines.append('                  type="input"')
         lines.append('                  io_type="{}"'.format(ice_pio_typename))
-        lines.append('                  filename_template="{}/ice/mpas-cice/general/snicar_optics_5bnd_snow_and_aerosols.nc"'.format(din_loc_root))
+        lines.append('                  filename_template="/glade/work/dazlich/seaice/snicar_optics_5bnd_snow_and_aerosols.nc"')
         lines.append('                  filename_interval="none"')
         lines.append('                  input_interval="initial_only" />')
         lines.append('')
@@ -949,7 +950,7 @@ def buildnml(case, caseroot, compname):
         lines.append('        type="input"')
         lines.append('        io_type="{}"'.format(ice_pio_typename))
         lines.append('        input_interval="initial_only"')
-        lines.append('        filename_template="{}/ice/mpas-cice/{}/{}.{}.nc">'.format(din_loc_root, ice_mask, grid_prefix, grid_date))
+        lines.append('        filename_template="/glade/work/dazlich/seaice/seaice_QU_120km.nc">')
         lines.append('')
         lines.append('       <var name="landIceMask"/>')
         lines.append('</stream>')
