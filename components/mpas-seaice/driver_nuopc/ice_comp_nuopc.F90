@@ -371,6 +371,7 @@ contains
     integer                 :: errorCode       ! error code
     logical, pointer :: tempLogicalConfig
     character(len=StrKIND), pointer :: tempCharConfig
+    real (kind=RKIND), pointer :: tempRealConfig
     character(*), parameter     :: F00   = "('(ice_comp_nuopc) ',2a,1x,d21.14)"
     character(len=*), parameter :: subname=trim(modName)//':(InitializeRealize) '
 
@@ -787,6 +788,7 @@ contains
        block => block % next
     end do
 
+
     ! Initialize the MPASSI core
     ierr = domain_ptr % core % core_init(domain_ptr, timeStamp)
     if ( ierr /= 0 ) then
@@ -960,7 +962,7 @@ contains
     ! Realize the actively coupled fields
     !-----------------------------------------------------------------
 
-    call ice_realize_fields(importState, exportState, mesh=ice_mesh, &
+    call ice_realize_fields(importState, exportState, mesh=Emesh, &
          flds_scalar_name=flds_scalar_name, flds_scalar_num=flds_scalar_num, &
          my_task=iam, mastertask=mastertask, lmpicom=lmpicom,  domain=domain_ptr, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
