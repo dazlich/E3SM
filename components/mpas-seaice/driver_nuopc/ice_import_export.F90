@@ -202,7 +202,7 @@ contains
        atm_prognostic = .true.
     end if
 
-    call fldlist_add(fldsFrIce_num, fldsFrIce, trim(flds_scalar_name))
+    !DDcall fldlist_add(fldsFrIce_num, fldsFrIce, trim(flds_scalar_name))
 
     ! ice states
     call fldlist_add(fldsFrIce_num, fldsFrIce, 'Si_ifrac'            )  !ailohi
@@ -965,7 +965,7 @@ contains
     ! local variables - mpas names
     integer :: iCell
     integer, pointer :: nCellsSolve
-    real (kind=RKIND) :: ailohi, Tsrf, seaiceFreshWaterFreezingPoint, &
+    real (kind=RKIND) :: ailohi, Tsrf, &
                          tauxa, tauya, tauxo, tauyo, basalPressure,   &
                          snowVolumeToSWE
                 
@@ -1071,53 +1071,107 @@ contains
     rc = ESMF_SUCCESS
     errorCode = 0
 
-    ! zero global first
-    Si_ifrac  (:) = 0.0_RKIND
-    Si_t      (:) = 0.0_RKIND
-    Si_bpress (:) = 0.0_RKIND
-    Si_vsno   (:) = 0.0_RKIND
-    Si_u10    (:) = 0.0_RKIND
-    Si_tref   (:) = 0.0_RKIND
-    Si_snowh  (:) = 0.0_RKIND
-    Si_qref   (:) = 0.0_RKIND
-    Faii_swnet(:) = 0.0_RKIND
-    Fioi_melth(:) = 0.0_RKIND
-    Fioi_swpen(:) = 0.0_RKIND
-    Fioi_meltw(:) = 0.0_RKIND
-    Fioi_salt (:) = 0.0_RKIND
-    Fioi_taux (:) = 0.0_RKIND
-    Fioi_tauy (:) = 0.0_RKIND
+    ! zero globally first
+    call state_getfldptr(exportState, 'Si_ifrac ', Si_ifrac , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_ifrac  (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Si_t'     , Si_t     , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_t      (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Si_bpress', Si_bpress, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_bpress (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Si_vsno'  , Si_vsno  , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_vsno   (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Si_u10'   , Si_u10   , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_u10    (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Si_tref'  , Si_tref  , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_tref   (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Si_snowh' , Si_snowh , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_snowh  (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Si_qref'  , Si_qref  , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_qref   (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Faii_swnet', Faii_swnet, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Faii_swnet(:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Fioi_melth', Fioi_melth, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Fioi_melth(:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Fioi_swpen', Fioi_swpen, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Fioi_swpen(:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Fioi_meltw', Fioi_meltw, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Fioi_meltw(:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Fioi_salt', Fioi_salt, rc)
+      Fioi_salt (:) = 0.0_RKIND
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call state_getfldptr(exportState, 'Fioi_taux', Fioi_taux, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Fioi_taux (:) = 0.0_RKIND
+    call state_getfldptr(exportState, 'Fioi_tauy', Fioi_tauy, rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Fioi_tauy (:) = 0.0_RKIND
 
-    if (config_use_column_shortwave) then
-       Si_avsdr  (:) = 0.0_RKIND
-       Si_anidr  (:) = 0.0_RKIND
-       Si_avsdf  (:) = 0.0_RKIND
-       Si_anidf  (:) = 0.0_RKIND
-    endif
+    !if (config_use_column_shortwave) then
+       call state_getfldptr(exportState, 'Si_avsdr', Si_avsdr, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Si_avsdr  (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Si_anidr', Si_anidr, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Si_anidr  (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Si_avsdf', Si_avsdf, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Si_avsdf  (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Si_anidf', Si_anidf, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Si_anidf  (:) = 0.0_RKIND
+    !endif
 
     !DDif (send_i2x_per_cat) then
+    !DD  call state_getfldptr(exportState, 'So_omask', So_omask, rc)
+    !DD    if (ChkErr(rc,__LINE__,u_FILE_u)) return
     !DD      ????  (:) = 0.0_RKIND
     !DDendif
       
     !DDif (config_use_data_icebergs) then
+    !DD  call state_getfldptr(exportState, 'So_omask', So_omask, rc)
+    !DD    if (ChkErr(rc,__LINE__,u_FILE_u)) return
     !DD      ????  (:) = 0.0_RKIND
     !DDendif
 
     if (atm_prognostic) then
-       Faii_taux (:) = 0.0_RKIND
-       Faii_tauy (:) = 0.0_RKIND
-       Faii_lat  (:) = 0.0_RKIND
-       Faii_sen  (:) = 0.0_RKIND
-       Faii_lwup (:) = 0.0_RKIND
-       Faii_evap (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Faii_taux', Faii_taux, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Faii_taux (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Faii_tauy', Faii_tauy, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Faii_tauy (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Faii_lat', Faii_lat, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Faii_lat  (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Faii_sen', Faii_sen, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Faii_sen  (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Faii_lwup', Faii_lwup, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Faii_lwup (:) = 0.0_RKIND
+       call state_getfldptr(exportState, 'Faii_evap', Faii_evap, rc)
+         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+         Faii_evap (:) = 0.0_RKIND
     endif
 
     snowVolumeToSWE = seaiceDensitySnow * 0.001 
     
+    cell_offset = 0
     block => domain % blocklist
     do while(associated(block))
 
-       call MPAS_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
 
        configs => block % configs
        call MPAS_pool_get_config(configs, "config_rotate_cartesian_grid", config_rotate_cartesian_grid)
@@ -1135,6 +1189,7 @@ contains
        call MPAS_pool_get_subpool(block % structs, "atmos_fluxes", atmosFluxes)
        call MPAS_pool_get_subpool(block % structs, "ocean_fluxes", oceanFluxes)
 
+       call MPAS_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
        call MPAS_pool_get_dimension(meshPool, 'nCellsSolve', nCellsSolve)
        call MPAS_pool_get_config(meshPool, "sphere_radius", sphere_radius)
        call MPAS_pool_get_array(meshPool, "latCell", latCell)
