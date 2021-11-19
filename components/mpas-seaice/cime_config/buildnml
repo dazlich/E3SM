@@ -252,7 +252,8 @@ def buildnml(case, caseroot, compname):
     #--------------------------------------------------------------------
 
     #input_file = "{}/ice/mpas-cice/{}/{}.{}.nc".format(din_loc_root, ice_mask, grid_prefix, grid_date)
-    input_file = "/glade/work/dazlich/seaice/seaice_QU_120km.nc"
+    #input_file = "/glade/work/dazlich/seaice/seaice_QU_120km.nc"
+    input_file = "/glade/p/cesmdata/cseg/inputdata/ocn/mpas-o/oQU120/ocean.QU.120km.160318.nc"
     if run_type == 'hybrid' or run_type == 'branch':
         input_file = "{}/{}.mpassi.rst.{}_{}.nc".format(rundir, run_refcase, run_refdate, run_reftod)
         expect(os.path.exists(input_file), " ERROR mpassi buildnml: missing specified restart file for branch or hybrid run: {}".format(input_file))
@@ -950,7 +951,7 @@ def buildnml(case, caseroot, compname):
         lines.append('        type="input"')
         lines.append('        io_type="{}"'.format(ice_pio_typename))
         lines.append('        input_interval="initial_only"')
-        lines.append('        filename_template="/glade/work/dazlich/seaice/seaice_QU_120km.nc">')
+        lines.append('        filename_template="/glade/p/cesmdata/cseg/inputdata/ocn/mpas-o/oQU120/ocean.QU.120km.160318.nc">')
         lines.append('')
         lines.append('       <var name="landIceMask"/>')
         lines.append('</stream>')
