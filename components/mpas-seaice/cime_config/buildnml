@@ -78,7 +78,8 @@ def buildnml(case, caseroot, compname):
         decomp_date = '161222'
         decomp_prefix = 'mpas-cice.graph.info.'
         grid_date = '161222'
-        grid_prefix = 'seaice.EC60to30v3'
+        #grid_prefix = 'seaice.EC60to30v3'
+        grid_prefix = 'oEC60to30v3_60layer'
         if ice_ic_mode == 'spunup':
             grid_date = '200927'
             grid_prefix = 'seaice.EC60to30v3.restartFrom_anvilG'
