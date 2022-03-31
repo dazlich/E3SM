@@ -77,8 +77,8 @@ def buildnml(case, caseroot, compname):
     if ocn_grid == 'oEC60to30v3':
         decomp_date = '161222'
         decomp_prefix = 'mpas-o.graph.info.'
-        restoring_file = 'sss.monthlyClimatology.PHC2_salx_040803.oEC60to30v3.nc'
-        analysis_mask_file = 'oEC60to30v3_Atlantic_region_and_southern_transect.nc'
+        #restoring_file = 'sss.monthlyClimatology.PHC2_salx_040803.oEC60to30v3.nc'
+        #analysis_mask_file = 'oEC60to30v3_Atlantic_region_and_southern_transect.nc'
         ic_date = '170905'
         ic_prefix = 'oEC60to30v3_60layer'
         if ocn_ic_mode == 'spunup':
@@ -144,6 +144,24 @@ def buildnml(case, caseroot, compname):
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '160318'
         ic_prefix = 'ocean.QU.120km'
+        if ocn_ic_mode == 'spunup':
+            logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
+            logger.warning("         But no file available for this grid.")
+
+    elif ocn_grid == 'oQU060':
+        decomp_date = '220131'
+        decomp_prefix = 'mpas-o.graph.info.'
+        ic_date = '220131'
+        ic_prefix = 'ocean.QU.060km'
+        if ocn_ic_mode == 'spunup':
+            logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
+            logger.warning("         But no file available for this grid.")
+
+    elif ocn_grid == 'oQU030':
+        decomp_date = '220131'
+        decomp_prefix = 'mpas-o.graph.info.'
+        ic_date = '220131'
+        ic_prefix = 'ocean.QU.030km'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
@@ -284,7 +302,8 @@ def buildnml(case, caseroot, compname):
     # Note: this is not setup for multiple instances
     #--------------------------------------------------------------------
 
-    input_file = "{}/ocn/mpas-o/{}/{}.{}.nc".format(din_loc_root, ocn_mask, ic_prefix, ic_date)
+    #input_file = "{}/ocn/mpas-o/{}/{}.{}.nc".format(din_loc_root, ocn_mask, ic_prefix, ic_date)
+    input_file = "/glade/work/dazlich/ec60_30/{}.{}.nc".format(ic_prefix, ic_date)
     if run_type == 'hybrid' or run_type == 'branch':
         input_file = "{}/{}.mpaso.rst.{}_{}.nc".format(rundir, run_refcase, run_refdate, run_reftod)
         expect(os.path.exists(input_file), "ERROR mpaso buildnml: missing specified restart file for branch or hybrid run: " + input_file)
