@@ -56,7 +56,7 @@ module ocn_import_export
      module procedure state_getfldptr_2d
   end interface state_getfldptr
 
-  integer     , parameter :: dbug = 1        ! i/o debug messages
+  integer     , parameter :: dbug = 0        ! i/o debug messages
   integer, parameter  :: stdout = 6
   character(*), parameter :: u_FILE_u = &
        __FILE__
