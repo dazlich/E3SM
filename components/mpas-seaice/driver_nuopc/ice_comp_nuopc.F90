@@ -455,6 +455,7 @@ contains
 !
 !-----------------------------------------------------------------------
 
+    call t_startf('mpassi_init_total')
     call t_startf('mpassi_init')
 
     !io_system => shr_pio_getiosys(iceid)
@@ -813,6 +814,7 @@ contains
     !DD there hase to be a better way to go from esmf type to MPAS_Time_Type
     call ESMF_TimeGet(Ecurrtime, s_i8=s_e, sn_i8=sn_e, sd_i8=sd_e, yy=yy_e, calendar = ecalendar, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    currtime%t%basetime%S  = s_e
     currtime%t%basetime%Sn = sn_e
     currtime%t%basetime%Sd = sd_e
     currtime%t%yr = yy_e
@@ -1066,6 +1068,19 @@ contains
 
       iam = domain_ptr % dminfo % my_proc_id
 
+    !--------------------------------
+    ! Query the Component for its clock, importState and exportState
+    !--------------------------------
+
+    call NUOPC_ModelGet(gcomp, modelClock=clock, importState=importState, exportState=exportState, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! Note this logic triggers off of the component clock rather than the internal pop time
+    ! The component clock does not get advanced until the end of the loop - not at the beginning
+
+    call ESMF_ClockGetAlarm(clock, alarmname='alarm_restart', alarm=alarm, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
       debugOn = .false.
 #ifdef MPAS_DEBUG
       debugOn = .true.
@@ -1082,7 +1097,7 @@ contains
 
       ! Set MPAS Log module instance
       mpas_log_info => domain_ptr % logInfo
-      if (debugOn) call mpas_log_write("=== Beginning ice_run_mct ===")
+      if (debugOn) call mpas_log_write("=== Beginning ice_run_nuopc ===")
 
       call mpas_pool_get_config(domain_ptr % configs, 'config_restart_timestamp_name', config_restart_timestamp_name)
 
