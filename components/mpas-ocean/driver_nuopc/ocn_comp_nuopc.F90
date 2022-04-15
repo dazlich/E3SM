@@ -255,7 +255,6 @@ contains
       use mpas_timekeeping, only : mpas_get_clock_time, mpas_get_time
       use mpas_bootstrapping, only : mpas_bootstrap_framework_phase1, mpas_bootstrap_framework_phase2
       use mpas_log
-      use esmfloc_calendarmod, only: gregorianCal, noleapCal
 
 
     ! Initialize MPASO
@@ -701,25 +700,26 @@ contains
 
     call ESMF_ClockGet( clock, currTime=EcurrTime, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !DD there hase to be a better way to go from esmf type to MPAS_Time_Type
+!    !DD there hase to be a better way to go from esmf type to MPAS_Time_Type
     call ESMF_TimeGet(Ecurrtime, s_i8=s_e, sn_i8=sn_e, sd_i8=sd_e, yy=yy_e, calendar = ecalendar, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    currtime%t%basetime%S  = s_e
-    currtime%t%basetime%Sn = sn_e
-    currtime%t%basetime%Sd = sd_e
-    currtime%t%yr = yy_e
+!    currtime%t%basetime%S  = s_e
+!    currtime%t%basetime%Sn = sn_e
+!    currtime%t%basetime%Sd = sd_e
+!    currtime%t%yr = yy_e
+    currtime%t = Ecurrtime
 
     call ESMF_CalendarGet(Ecalendar, calkindflag=type_e, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    if(type_e == ESMF_CALKIND_NOLEAP) then
-       currTime%t%calendar => noleapCal
-    elseif(type_e == ESMF_CALKIND_GREGORIAN) then
-       currTime%t%calendar => gregorianCal
-    else
-       rc = 1
-       if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    endif
+!    if(type_e == ESMF_CALKIND_NOLEAP) then
+!       currTime%t%calendar => noleapCal
+!    elseif(type_e == ESMF_CALKIND_GREGORIAN) then
+!       currTime%t%calendar => gregorianCal
+!    else
+!       rc = 1
+!       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+!    endif
 
     if (runtype == 'initial') then
        call mpas_set_clock_time(domain_ptr % clock, currTime, MPAS_START_TIME, ierr)
