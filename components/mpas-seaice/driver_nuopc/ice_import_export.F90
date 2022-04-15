@@ -18,7 +18,6 @@ module ice_import_export
    !use mpas_kind_types, only : r8 => r8kind
    use mpas_io_units
    use mpas_timekeeping
-   use mpas_bootstrapping
    use mpas_dmpar
    use mpas_log
 
@@ -205,6 +204,7 @@ contains
     !DDcall fldlist_add(fldsFrIce_num, fldsFrIce, trim(flds_scalar_name))
 
     ! ice states
+    call fldlist_add(fldsFrIce_num, fldsFrIce, 'Si_imask'            )  
     call fldlist_add(fldsFrIce_num, fldsFrIce, 'Si_ifrac'            )  !ailohi
     call fldlist_add(fldsFrIce_num, fldsFrIce, 'Si_t') !surfaceTemperatureCell
     call fldlist_add(fldsFrIce_num, fldsFrIce, 'Si_bpress'         ) !basalPressure
@@ -237,7 +237,7 @@ contains
        call fldlist_add(fldsFrIce_num, fldsFrIce, 'Faii_lat' ) !latentHeatFlux
        call fldlist_add(fldsFrIce_num, fldsFrIce, 'Faii_sen' ) !sensibleHeatFlux
        call fldlist_add(fldsFrIce_num, fldsFrIce, 'Faii_lwup') !longwaveUp
-       call fldlist_add(fldsFrIce_num, fldsFrIce, 'Faii_evap') !evaporativeWaterFlux
+!       call fldlist_add(fldsFrIce_num, fldsFrIce, 'Faii_evap') !evaporativeWaterFlux
     end if
 
     ! ice/ocn fluxes computed by ice
@@ -535,7 +535,7 @@ contains
     integer gcell, cell_offset
 
     real (kind=RKIND), dimension(:), pointer :: airLevelHeight, airPotentialTemperature, &
-                                                evaporationFlux, airTemperature, &
+                                                evaporativeWaterFlux, airTemperature, &
                                                 airSpecificHumidity, airDensity, &
                                                 shortwaveVisibleDirectDown, shortwaveVisibleDiffuseDown, &
                                                 shortwaveIRDirectDown, shortwaveIRDiffuseDown, &
@@ -548,7 +548,7 @@ contains
                                                 seaSurfaceTiltU, seaSurfaceTiltV, &
                                                 longwaveDown
     type (field1DReal),         pointer :: airLevelHeightField, airPotentialTemperatureField, &
-                                           evaporationFluxField, airTemperatureField, &
+                                           evaporativeWaterFluxField, airTemperatureField, &
                                            airSpecificHumidityField, airDensityField, &
                                            shortwaveVisibleDirectDownField, shortwaveVisibleDiffuseDownField, &
                                            shortwaveIRDirectDownField, shortwaveIRDiffuseDownField, &
@@ -578,9 +578,17 @@ contains
 
     if (dbug > 5) call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
+    call t_startf ('mpassi_imp_atm')
+
     !-----------------------------------------------------------------------
     ! from atmosphere
     !-----------------------------------------------------------------------
+    call state_getfldptr(importState, 'Faxa_lwdn', Faxa_lwdn, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call state_getfldptr(importState, 'Faxa_rain', Faxa_rain, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call state_getfldptr(importState, 'Faxa_snow', Faxa_snow, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
     call state_getfldptr(importState, 'Sa_z', Sa_z, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
     call state_getfldptr(importState, 'Sa_ptem', Sa_ptem, rc)
@@ -598,12 +606,6 @@ contains
     call state_getfldptr(importState, 'Faxa_swndr', Faxa_swndr, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
     call state_getfldptr(importState, 'Faxa_swndf', Faxa_swndf, rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    call state_getfldptr(importState, 'Faxa_lwdn', Faxa_lwdn, rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    call state_getfldptr(importState, 'Faxa_rain', Faxa_rain, rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    call state_getfldptr(importState, 'Faxa_snow', Faxa_snow, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
     call state_getfldptr(importState, 'Sa_u', Sa_u, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
@@ -684,7 +686,7 @@ contains
           seaSurfaceTemperature(iCell)       = So_t    (gcell)
           seaSurfaceSalinity(iCell)          = So_s    (gcell)
 
-          seaFreezingTemperature(iCell) = colpkg_sea_freezing_temperature(seaSurfaceSalinity(i))
+          seaFreezingTemperature(iCell) = colpkg_sea_freezing_temperature(seaSurfaceSalinity(iCell))
 
           uOceanVelocity(iCell)              = So_u    (gcell)
           vOceanVelocity(iCell)              = So_v    (gcell)
@@ -858,7 +860,7 @@ contains
 
     call mpas_pool_get_field(atmosCoupling, 'airLevelHeight', airLevelHeightField)
     call mpas_pool_get_field(atmosCoupling, 'airPotentialTemperature', airPotentialTemperatureField)
-    call mpas_pool_get_field(atmosCoupling, 'evaporationFlux', evaporationFluxField)
+!    call mpas_pool_get_field(atmosCoupling, 'evaporativeWaterFlux', evaporativeWaterFluxField)
     call mpas_pool_get_field(atmosCoupling, 'airTemperature', airTemperatureField)
     call mpas_pool_get_field(atmosCoupling, 'airSpecificHumidity', airSpecificHumidityField)
     call mpas_pool_get_field(atmosCoupling, 'airDensity', airDensityField)
@@ -898,30 +900,53 @@ contains
     !DD   endif
     !DDendif
 
-    call mpas_dmpar_exch_halo_field(seaSurfaceTemperatureField)
-    call mpas_dmpar_exch_halo_field(seaSurfaceSalinityField)
-    call mpas_dmpar_exch_halo_field(seaFreezingTemperatureField)
-    call mpas_dmpar_exch_halo_field(freezingMeltingPotentialField)
-    call mpas_dmpar_exch_halo_field(frazilMassAdjustField)
-    call mpas_dmpar_exch_halo_field(uOceanVelocityField)
-    call mpas_dmpar_exch_halo_field(vOceanVelocityField)
-    call mpas_dmpar_exch_halo_field(seaSurfaceTiltUField)
-    call mpas_dmpar_exch_halo_field(seaSurfaceTiltVField)
+    if ( seaSurfaceTemperatureField % isActive ) &
+       call mpas_dmpar_exch_halo_field(seaSurfaceTemperatureField)
+    if ( seaSurfaceSalinityField % isActive ) &
+       call mpas_dmpar_exch_halo_field(seaSurfaceSalinityField)
+    if ( seaFreezingTemperatureField % isActive ) &
+       call mpas_dmpar_exch_halo_field(seaFreezingTemperatureField)
+    if ( freezingMeltingPotentialField % isActive ) &
+       call mpas_dmpar_exch_halo_field(freezingMeltingPotentialField)
+    if ( frazilMassAdjustField % isActive ) &
+       call mpas_dmpar_exch_halo_field(frazilMassAdjustField)
+    if ( uOceanVelocityField % isActive ) &
+       call mpas_dmpar_exch_halo_field(uOceanVelocityField)
+    if ( vOceanVelocityField % isActive ) &
+       call mpas_dmpar_exch_halo_field(vOceanVelocityField)
+    if ( seaSurfaceTiltUField % isActive ) &
+       call mpas_dmpar_exch_halo_field(seaSurfaceTiltUField)
+    if ( seaSurfaceTiltVField % isActive ) &
+       call mpas_dmpar_exch_halo_field(seaSurfaceTiltVField)
 
-    call mpas_dmpar_exch_halo_field(airLevelHeightField)
-    call mpas_dmpar_exch_halo_field(airPotentialTemperatureField)
-    call mpas_dmpar_exch_halo_field(evaporationFluxField)
-    call mpas_dmpar_exch_halo_field(airTemperatureField)
-    call mpas_dmpar_exch_halo_field(airSpecificHumidityField)
-    call mpas_dmpar_exch_halo_field(airDensityField)
-    call mpas_dmpar_exch_halo_field(shortwaveVisibleDirectDownField)
-    call mpas_dmpar_exch_halo_field(shortwaveVisibleDiffuseDownField)
-    call mpas_dmpar_exch_halo_field(shortwaveIRDirectDownField)
-    call mpas_dmpar_exch_halo_field(shortwaveIRDiffuseDownField)
-    call mpas_dmpar_exch_halo_field(rainfallRateField)
-    call mpas_dmpar_exch_halo_field(snowfallRateField)
-    call mpas_dmpar_exch_halo_field(uAirVelocityField)
-    call mpas_dmpar_exch_halo_field(vAirVelocityField)
+    if ( airLevelHeightField % isActive ) &
+       call mpas_dmpar_exch_halo_field(airLevelHeightField)
+    if ( airPotentialTemperatureField % isActive ) &
+       call mpas_dmpar_exch_halo_field(airPotentialTemperatureField)
+!    if ( evaporativeWaterFluxField % isActive ) &
+!       call mpas_dmpar_exch_halo_field(evaporativeWaterFluxField)
+    if ( airTemperatureField % isActive ) &
+       call mpas_dmpar_exch_halo_field(airTemperatureField)
+    if ( airSpecificHumidityField % isActive ) &
+       call mpas_dmpar_exch_halo_field(airSpecificHumidityField)
+    if ( airDensityField % isActive ) &
+       call mpas_dmpar_exch_halo_field(airDensityField)
+    if ( shortwaveVisibleDirectDownField % isActive ) &
+       call mpas_dmpar_exch_halo_field(shortwaveVisibleDirectDownField)
+    if ( shortwaveVisibleDiffuseDownField % isActive ) &
+       call mpas_dmpar_exch_halo_field(shortwaveVisibleDiffuseDownField)
+    if ( shortwaveIRDirectDownField % isActive ) &
+       call mpas_dmpar_exch_halo_field(shortwaveIRDirectDownField)
+    if ( shortwaveIRDiffuseDownField % isActive ) &
+       call mpas_dmpar_exch_halo_field(shortwaveIRDiffuseDownField)
+    if ( rainfallRateField % isActive ) &
+       call mpas_dmpar_exch_halo_field(rainfallRateField)
+    if ( snowfallRateField % isActive ) &
+       call mpas_dmpar_exch_halo_field(snowfallRateField)
+    if ( uAirVelocityField % isActive ) &
+       call mpas_dmpar_exch_halo_field(uAirVelocityField)
+    if ( vAirVelocityField % isActive ) &
+       call mpas_dmpar_exch_halo_field(vAirVelocityField)
 
     !DDif (config_use_aerosols) then
     !DDendif
@@ -985,6 +1010,7 @@ contains
     integer gcell, cell_offset
 
     ! local variables - coupler names
+    real (r8), pointer   :: Si_imask  (:) 
     real (r8), pointer   :: Si_ifrac  (:) 
     real (r8), pointer   :: Si_bpress (:) 
     real (r8), pointer   :: Si_t      (:) 
@@ -1070,6 +1096,11 @@ contains
     !-----------------------------------------------------
     rc = ESMF_SUCCESS
     errorCode = 0
+
+    ! ice mask set one everywhere
+    call state_getfldptr(exportState, 'Si_imask ', Si_imask , rc)
+      if (ChkErr(rc,__LINE__,u_FILE_u)) return
+      Si_imask  (:) = 1.0_RKIND ! all points are potentially ice points
 
     ! zero globally first
     call state_getfldptr(exportState, 'Si_ifrac ', Si_ifrac , rc)
@@ -1161,9 +1192,9 @@ contains
        call state_getfldptr(exportState, 'Faii_lwup', Faii_lwup, rc)
          if (ChkErr(rc,__LINE__,u_FILE_u)) return
          Faii_lwup (:) = 0.0_RKIND
-       call state_getfldptr(exportState, 'Faii_evap', Faii_evap, rc)
-         if (ChkErr(rc,__LINE__,u_FILE_u)) return
-         Faii_evap (:) = 0.0_RKIND
+!       call state_getfldptr(exportState, 'Faii_evap', Faii_evap, rc)
+!         if (ChkErr(rc,__LINE__,u_FILE_u)) return
+!         Faii_evap (:) = 0.0_RKIND
     endif
 
     snowVolumeToSWE = seaiceDensitySnow * 0.001 
@@ -1226,7 +1257,7 @@ contains
        call MPAS_pool_get_array(atmosFluxes, 'latentHeatFlux', latentHeatFlux)
        call MPAS_pool_get_array(atmosFluxes, 'sensibleHeatFlux', sensibleHeatFlux)
        call MPAS_pool_get_array(atmosFluxes, 'longwaveUp', longwaveUp)
-       call MPAS_pool_get_array(atmosFluxes, 'evaporativeWaterFlux', evaporativeWaterFlux)
+!       call MPAS_pool_get_array(atmosFluxes, 'evaporativeWaterFlux', evaporativeWaterFlux)
 
        call MPAS_pool_get_array(oceanFluxes, 'oceanHeatFlux', oceanHeatFlux)
        call MPAS_pool_get_array(oceanFluxes, 'oceanShortwaveFlux', oceanShortwaveFlux)
@@ -1355,7 +1386,7 @@ contains
              Faii_lat  (gcell) = latentHeatFlux(i)
              Faii_sen  (gcell) = sensibleHeatFlux(i)
              Faii_lwup (gcell) = longwaveUp(i)
-             Faii_evap (gcell) = evaporativeWaterFlux(i)
+!             Faii_evap (gcell) = evaporativeWaterFlux(i)
           enddo
        endif
 
