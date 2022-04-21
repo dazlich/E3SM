@@ -39,7 +39,8 @@
 <config_dt ocn_grid="oQU240wLI">'02:00:00'</config_dt>
 <config_dt ocn_grid="oQU120">'00:30:00'</config_dt>
 <config_dt ocn_grid="oQU060">'00:30:00'</config_dt>
-<config_dt ocn_grid="oQU030">'00:30:00'</config_dt>
+<config_dt ocn_grid="oQU030">'00:15:00'</config_dt>
+<config_dt ocn_grid="oQU015">'00:07:30'</config_dt>
 <config_dt ocn_grid="oEC60to30v3">'00:30:00'</config_dt>
 <config_dt ocn_grid="oEC60to30v3wLI">'00:30:00'</config_dt>
 <config_dt ocn_grid="ECwISC30to60E1r2">'00:30:00'</config_dt>
@@ -63,6 +64,7 @@
 <config_hmix_scaleWithMesh ocn_grid="oQU120">.false.</config_hmix_scaleWithMesh>
 <config_hmix_scaleWithMesh ocn_grid="oQU060">.true.</config_hmix_scaleWithMesh>
 <config_hmix_scaleWithMesh ocn_grid="oQU030">.true.</config_hmix_scaleWithMesh>
+<config_hmix_scaleWithMesh ocn_grid="oQU015">.true.</config_hmix_scaleWithMesh>
 <config_hmix_scaleWithMesh ocn_grid="oEC60to30v3">.true.</config_hmix_scaleWithMesh>
 <config_hmix_scaleWithMesh ocn_grid="oEC60to30v3wLI">.true.</config_hmix_scaleWithMesh>
 <config_hmix_scaleWithMesh ocn_grid="ECwISC30to60E1r2">.true.</config_hmix_scaleWithMesh>
@@ -86,6 +88,7 @@
 <config_use_mom_del2>.false.</config_use_mom_del2>
 <config_use_mom_del2 ocn_grid="oQU060">.true.</config_use_mom_del2>
 <config_use_mom_del2 ocn_grid="oQU030">.true.</config_use_mom_del2>
+<config_use_mom_del2 ocn_grid="oQU015">.true.</config_use_mom_del2>
 <config_use_mom_del2 ocn_grid="oEC60to30v3">.true.</config_use_mom_del2>
 <config_use_mom_del2 ocn_grid="oEC60to30v3wLI">.true.</config_use_mom_del2>
 <config_use_mom_del2 ocn_grid="ECwISC30to60E1r2">.true.</config_use_mom_del2>
@@ -96,7 +99,8 @@
 <config_use_mom_del2 ocn_grid="ECwISC30to60E2r1">.true.</config_use_mom_del2>
 <config_mom_del2>10.0</config_mom_del2>
 <config_mom_del2 ocn_grid="oQU060">1000.0</config_mom_del2>
-<config_mom_del2 ocn_grid="oQU060">1000.0</config_mom_del2>
+<config_mom_del2 ocn_grid="oQU030">1000.0</config_mom_del2>
+<config_mom_del2 ocn_grid="oQU015">462.0</config_mom_del2>
 <config_mom_del2 ocn_grid="oEC60to30v3">1000.0</config_mom_del2>
 <config_mom_del2 ocn_grid="oEC60to30v3wLI">1000.0</config_mom_del2>
 <config_mom_del2 ocn_grid="ECwISC30to60E1r2">1000.0</config_mom_del2>
@@ -116,6 +120,7 @@
 <config_mom_del4 ocn_grid="oQU120">2.6e13</config_mom_del4>
 <config_mom_del4 ocn_grid="oQU060">2.0e12</config_mom_del4>
 <config_mom_del4 ocn_grid="oQU030">1.2e11</config_mom_del4>
+<config_mom_del4 ocn_grid="oQU015">1.5e10</config_mom_del4>
 <config_mom_del4 ocn_grid="oEC60to30v3">1.2e11</config_mom_del4>
 <config_mom_del4 ocn_grid="oEC60to30v3wLI">1.2e11</config_mom_del4>
 <config_mom_del4 ocn_grid="ECwISC30to60E1r2">1.2e11</config_mom_del4>
@@ -394,6 +399,7 @@
 <config_btr_dt ocn_grid="oQU120">'0000_00:01:30'</config_btr_dt>
 <config_btr_dt ocn_grid="oQU060">'0000_00:01:00'</config_btr_dt>
 <config_btr_dt ocn_grid="oQU030">'0000_00:01:00'</config_btr_dt>
+<config_btr_dt ocn_grid="oQU015">'0000_00:00:30'</config_btr_dt>
 <config_btr_dt ocn_grid="oEC60to30v3">'0000_00:01:00'</config_btr_dt>
 <config_btr_dt ocn_grid="oEC60to30v3wLI">'0000_00:01:00'</config_btr_dt>
 <config_btr_dt ocn_grid="ECwISC30to60E1r2">'0000_00:01:00'</config_btr_dt>
@@ -940,6 +946,7 @@
 <config_AM_mocStreamfunction_enable ocn_grid="oQU120">.false.</config_AM_mocStreamfunction_enable>
 <config_AM_mocStreamfunction_enable ocn_grid="oQU060">.false.</config_AM_mocStreamfunction_enable>
 <config_AM_mocStreamfunction_enable ocn_grid="oQU030">.false.</config_AM_mocStreamfunction_enable>
+<config_AM_mocStreamfunction_enable ocn_grid="oQU015">.false.</config_AM_mocStreamfunction_enable>
 <config_AM_mocStreamfunction_enable ocn_grid="oEC60to30v3wLI">.false.</config_AM_mocStreamfunction_enable>
 <config_AM_mocStreamfunction_enable ocn_grid="ECwISC30to60E1r2">.false.</config_AM_mocStreamfunction_enable>
 <config_AM_mocStreamfunction_enable ocn_grid="oEC60to30v3">.true.</config_AM_mocStreamfunction_enable>
