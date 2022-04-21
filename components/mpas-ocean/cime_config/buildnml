@@ -73,7 +73,8 @@ def buildnml(case, caseroot, compname):
     restoring_file = ''
     analysis_mask_file = ''
     eco_forcing_file = ''
-
+    din_loc_tem = "{}".format(din_loc_root)
+    din_loc_tem = "{}/ocn/mpas-o/{}".format(din_loc_root,ocn_mask)
     if ocn_grid == 'oEC60to30v3':
         decomp_date = '161222'
         decomp_prefix = 'mpas-o.graph.info.'
@@ -153,6 +154,7 @@ def buildnml(case, caseroot, compname):
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '220131'
         ic_prefix = 'ocean.QU.060km'
+        din_loc_tem = '/glade/work/dazlich/terp'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
@@ -162,6 +164,37 @@ def buildnml(case, caseroot, compname):
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '220131'
         ic_prefix = 'ocean.QU.030km'
+        din_loc_tem = '/glade/work/dazlich/terp'
+        if ocn_ic_mode == 'spunup':
+            logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
+            logger.warning("         But no file available for this grid.")
+
+    elif ocn_grid == 'oQU015':
+        decomp_date = '220131'
+        decomp_prefix = 'mpas-o.graph.info.'
+        ic_date = '220131'
+        ic_prefix = 'ocean.QU.015km'
+        din_loc_tem = '/glade/work/dazlich/terp'
+        if ocn_ic_mode == 'spunup':
+            logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
+            logger.warning("         But no file available for this grid.")
+
+    elif ocn_grid == 'oQU0075':
+        decomp_date = '220131'
+        decomp_prefix = 'mpas-o.graph.info.'
+        ic_date = '220131'
+        ic_prefix = 'ocean.QU.0075km'
+        din_loc_tem = '/glade/work/dazlich/terp'
+        if ocn_ic_mode == 'spunup':
+            logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
+            logger.warning("         But no file available for this grid.")
+
+    elif ocn_grid == 'oQU00375':
+        decomp_date = '220131'
+        decomp_prefix = 'mpas-o.graph.info.'
+        ic_date = '220131'
+        ic_prefix = 'ocean.QU.00375km'
+        din_loc_tem = '/glade/work/dazlich/terp'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
@@ -302,7 +335,7 @@ def buildnml(case, caseroot, compname):
     # Note: this is not setup for multiple instances
     #--------------------------------------------------------------------
 
-    input_file = "{}/ocn/mpas-o/{}/{}.{}.nc".format(din_loc_root, ocn_mask, ic_prefix, ic_date)
+    input_file = "{}/{}.{}.nc".format(din_loc_tem, ic_prefix, ic_date)
     if run_type == 'hybrid' or run_type == 'branch':
         input_file = "{}/{}.mpaso.rst.{}_{}.nc".format(rundir, run_refcase, run_refdate, run_reftod)
         expect(os.path.exists(input_file), "ERROR mpaso buildnml: missing specified restart file for branch or hybrid run: " + input_file)
@@ -316,7 +349,7 @@ def buildnml(case, caseroot, compname):
 
     with open(os.path.join(casebuild, "mpaso.input_data_list"), "w") as input_list:
 
-        input_list.write("mesh = {}/ocn/mpas-o/{}/{}.{}.nc\n".format(din_loc_root, ocn_mask, ic_prefix, ic_date))
+        input_list.write("mesh = {}\n".format(input_file))
         input_list.write("ic = {}\n".format(input_file))
         if analysis_mask_file != '':
             input_list.write("moc = {}/ocn/mpas-o/{}/{}\n".format(din_loc_root, ocn_mask, analysis_mask_file))
@@ -405,14 +438,22 @@ def buildnml(case, caseroot, compname):
         lines.append('                  type="none"')
         if ocn_grid.startswith("oRRS1"):
             lines.append('                  io_type="pnetcdf,cdf5"')
+        elif ocn_grid.startswith("oQU01"):
+            lines.append('                  io_type="pnetcdf,cdf5"')
+        elif ocn_grid.startswith("oQU00"):
+            lines.append('                  io_type="pnetcdf,cdf5"')
         else:
             lines.append('                  io_type="{}"'.format(ocn_pio_typename))
 
-        lines.append('                  filename_template="{}/ocn/mpas-o/{}/{}.{}.nc"'.format(din_loc_root, ocn_mask, ic_prefix, ic_date))
+        lines.append('                  filename_template="{}"'.format(input_file))
         lines.append('/>')
         lines.append('<immutable_stream name="input"')
         lines.append('                  type="input"')
         if ocn_grid.startswith("oRRS1"):
+            lines.append('                  io_type="pnetcdf,cdf5"')
+        elif ocn_grid.startswith("oQU01"):
+            lines.append('                  io_type="pnetcdf,cdf5"')
+        elif ocn_grid.startswith("oQU00"):
             lines.append('                  io_type="pnetcdf,cdf5"')
         else:
             lines.append('                  io_type="{}"'.format(ocn_pio_typename))
@@ -434,6 +475,10 @@ def buildnml(case, caseroot, compname):
         lines.append('<immutable_stream name="restart"')
         lines.append('                  type="input;output"')
         if ocn_grid.startswith("oRRS1"):
+            lines.append('                  io_type="pnetcdf,cdf5"')
+        elif ocn_grid.startswith("oQU01"):
+            lines.append('                  io_type="pnetcdf,cdf5"')
+        elif ocn_grid.startswith("oQU00"):
             lines.append('                  io_type="pnetcdf,cdf5"')
         else:
             lines.append('                  io_type="{}"'.format(ocn_pio_typename))
