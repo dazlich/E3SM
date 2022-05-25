@@ -116,17 +116,19 @@ def buildnml(case, caseroot, compname):
     elif ocn_grid == 'oQU480':
         decomp_date = '151209'
         decomp_prefix = 'mpas-o.graph.info.'
-        ic_date = '151209'
+        ic_date = '220131'
         ic_prefix = 'ocean.QU.480km'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
 
     elif ocn_grid == 'oQU240':
-        decomp_date = '151209'
+        decomp_date = 'QU240'
         decomp_prefix = 'mpas-o.graph.info.'
-        ic_date = '151209'
+        ic_date = '220131'
         ic_prefix = 'ocean.QU.240km'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
@@ -136,65 +138,67 @@ def buildnml(case, caseroot, compname):
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '160929'
         ic_prefix = 'ocean.QU.240wLI'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
 
     elif ocn_grid == 'oQU120':
-        decomp_date = '160318'
+        decomp_date = 'QU120'
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '160318'
         ic_prefix = 'ocean.QU.120km'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
 
     elif ocn_grid == 'oQU060':
-        decomp_date = '220131'
+        decomp_date = 'QU060'
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '220131'
         ic_prefix = 'ocean.QU.060km'
-        din_loc_tem = '/glade/work/dazlich/terp'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
 
     elif ocn_grid == 'oQU030':
-        decomp_date = '220131'
+        decomp_date = 'QU030'
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '220131'
         ic_prefix = 'ocean.QU.030km'
-        din_loc_tem = '/glade/work/dazlich/terp'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
 
     elif ocn_grid == 'oQU015':
-        decomp_date = '220131'
+        decomp_date = 'QU015'
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '220131'
         ic_prefix = 'ocean.QU.015km'
-        din_loc_tem = '/glade/work/dazlich/terp'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
 
     elif ocn_grid == 'oQU0075':
-        decomp_date = '220131'
+        decomp_date = 'QU0075'
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '220131'
         ic_prefix = 'ocean.QU.0075km'
-        din_loc_tem = '/glade/work/dazlich/terp'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
 
     elif ocn_grid == 'oQU00375':
-        decomp_date = '220131'
+        decomp_date = 'QU00375'
         decomp_prefix = 'mpas-o.graph.info.'
         ic_date = '220131'
         ic_prefix = 'ocean.QU.00375km'
-        din_loc_tem = '/glade/work/dazlich/terp'
+        din_loc_tem = '/glade/p/univ/ucsu0085/inputdata'
         if ocn_ic_mode == 'spunup':
             logger.warning("WARNING: The specified compset is requesting ocean ICs spunup from a G-case")
             logger.warning("         But no file available for this grid.")
